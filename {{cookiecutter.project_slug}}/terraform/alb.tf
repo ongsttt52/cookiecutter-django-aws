@@ -15,21 +15,21 @@ resource "aws_lb" "main" {
   }
 }
 
-# Target Group (ECS 컨테이너로 트래픽 전달)
-resource "aws_lb_target_group" "app" {
-  name        = "${local.project_name_normalized}-tg-${var.environment}"
+# Backend Target Group (Django 컨테이너로 트래픽 전달)
+resource "aws_lb_target_group" "backend" {
+  name        = "${local.project_name_normalized}-be-tg-${var.environment}"
   port        = 8000
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
   target_type = "ip"  # Fargate 또는 awsvpc 네트워크 모드 사용 시 ip
 
-  # 헬스체크 (Django /health/ 엔드포인트)
+  # 헬스체크 (Django /api/health/ 엔드포인트)
   health_check {
     enabled             = true
     healthy_threshold   = 2
     interval            = 30
     matcher             = "200"
-    path                = "/health/"
+    path                = "/api/health/"
     port                = "traffic-port"
     protocol            = "HTTP"
     timeout             = 5
@@ -37,9 +37,36 @@ resource "aws_lb_target_group" "app" {
   }
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-tg-${var.environment}"
+    Name = "${replace(var.project_name, "_", "-")}-be-tg-${var.environment}"
   }
 }
+
+{% if cookiecutter.use_frontend == "yes" %}
+# Frontend Target Group (Next.js 컨테이너로 트래픽 전달)
+resource "aws_lb_target_group" "frontend" {
+  name        = "${local.project_name_normalized}-fe-tg-${var.environment}"
+  port        = 3000
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
+  target_type = "ip"
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200"
+    path                = "/"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 5
+    unhealthy_threshold = 2
+  }
+
+  tags = {
+    Name = "${replace(var.project_name, "_", "-")}-fe-tg-${var.environment}"
+  }
+}
+{% endif %}
 
 # Listener (HTTP 트래픽을 Target Group으로 전달)
 resource "aws_lb_listener" "http" {
@@ -47,8 +74,36 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
+{% if cookiecutter.use_frontend == "yes" %}
+  # 기본 액션: Frontend로 전달
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.app.arn
+    target_group_arn = aws_lb_target_group.frontend.arn
+  }
+{% else %}
+  # Backend만 사용 시: Backend로 전달
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.backend.arn
+  }
+{% endif %}
+}
+
+{% if cookiecutter.use_frontend == "yes" %}
+# /api/* 경로는 Backend Target Group으로 전달
+resource "aws_lb_listener_rule" "api" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 1
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.backend.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/*"]
+    }
   }
 }
+{% endif %}
