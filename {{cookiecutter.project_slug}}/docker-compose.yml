@@ -55,6 +55,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: {{cookiecutter.project_slug}}_celery_worker
+    entrypoint: []
     command: uv run celery -A config worker -l info
     volumes:
       - ./backend:/app
@@ -70,6 +71,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: {{cookiecutter.project_slug}}_celery_beat
+    entrypoint: []
     command: uv run celery -A config beat -l info
     volumes:
       - ./backend:/app
@@ -87,6 +89,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: {{cookiecutter.project_slug}}_websocket
+    entrypoint: []
     command: uv run daphne -b 0.0.0.0 -p 8001 config.asgi:application
     volumes:
       - ./backend:/app
