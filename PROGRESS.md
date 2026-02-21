@@ -1,6 +1,6 @@
 # Django AWS Cookiecutter Template - 진행상황
 
-**마지막 업데이트:** 2025-10-24
+**마지막 업데이트:** 2026-02-21
 
 ---
 
@@ -12,7 +12,7 @@ Django 5.2.7 + AWS ECS 배포를 위한 **프로덕션급 Cookiecutter 템플릿
 
 **기술 스택:**
 - Django 5.2.7 + Django REST Framework + JWT 인증
-- **Next.js 16** (프론트엔드 - TypeScript + Tailwind CSS)
+- **Next.js 15** (프론트엔드 - TypeScript + Tailwind CSS 4) [선택 옵션]
 - AWS S3 Presigned URL (파일 업로드/다운로드)
 - Docker Compose (로컬 개발)
 - PostgreSQL 16, Redis 7, Celery, WebSocket (Channels)
@@ -136,210 +136,107 @@ Django 5.2.7 + AWS ECS 배포를 위한 **프로덕션급 Cookiecutter 템플릿
 
 ---
 
-## 현재 작업 중 🚧
+### Phase 4: Django 백엔드 설정 완성 (완료)
 
-**Phase 4: End-to-End 배포 테스트 및 버그 수정 (완료!)**
+**PR**: [#1 feat/backend-config → dev](https://github.com/ongsttt52/cookiecutter-django-aws/pull/1)
+**작업일**: 2026-02-21
 
-### 2025-10-23 작업 내역
+- ✅ ALB health check용 `/health/` 엔드포인트 (core app) 추가
+- ✅ `entrypoint.sh` — 컨테이너 시작 시 migrate + collectstatic 자동 실행
+- ✅ Dockerfile을 빌드 타임 collectstatic에서 entrypoint 방식으로 전환
+- ✅ drf-spectacular Swagger UI (`/api/docs/`) 연동
+- ✅ Worker 컨테이너(celery)에서 entrypoint 실행 방지 (migration race condition 해결)
+- ✅ `.env.example` S3 버킷명 demo 환경에 맞게 수정
 
-**테스트 프로젝트:** `test_workflow_v4` (demodev-lab 조직)
+**코드 리뷰**: [`docs/reviews/2026-02-21-pr1-backend-config.md`](docs/reviews/2026-02-21-pr1-backend-config.md)
+
+<details>
+<summary>Phase 4 이전 디버깅 기록 (2025-10-23, test_workflow_v4)</summary>
 
 #### 해결한 주요 이슈들:
 
-1. **Docker 플랫폼 호환성 문제** ✅
-   - 문제: `exec format error` - ARM64 이미지가 ECS Fargate(x86_64)에서 실행 안 됨
-   - 해결: Docker Buildx 사용 + `--platform linux/amd64` 옵션 추가
-   - 파일: `deploy.yml`, `Dockerfile`
-
-2. **UV 패키지 매니저 설치 방식 개선** ✅
-   - 문제: `COPY --from` 방식의 플랫폼 불일치
-   - 해결: `pip install uv`로 변경 (플랫폼 무관)
-   - 파일: `Dockerfile`
-
-3. **AWS 자격증명 처리** ✅
-   - 문제: ECS에서 `AWS_ACCESS_KEY_ID` 환경 변수 필수로 요구
-   - 해결: `env('AWS_ACCESS_KEY_ID', default=None)` - IAM Task Role 사용
-   - 파일: `settings.py`
-
-4. **리소스 네이밍 불일치** ✅
-   - 문제: `test_workflow_v4` vs `test-workflow-v4`
-   - 해결: deploy.yml에서 정규화된 이름 사용
-   - 파일: `deploy.yml` - `PROJECT_NAME` 환경 변수 추가
-
-5. **HTTPS 강제 리다이렉트 문제** ✅
-   - 문제: demo 환경에서 SSL 인증서 없이 HTTPS 리다이렉트 발생
-   - 해결: `ENVIRONMENT` 변수 체크, prod 환경에서만 HTTPS 강제
-   - 파일: `settings.py`
-
-6. **Django Admin Static 파일 문제** ✅
-   - 문제: CSS/JS 파일이 로드되지 않아 Admin 페이지 깨짐
-   - 해결: WhiteNoise 추가 + `collectstatic` 실행
-   - 파일: `pyproject.toml`, `settings.py`, `Dockerfile`
-
-7. **S3 버킷 이름 일관성** ✅
-   - 문제: `test_workflow_v4-media-prod` (잘못된 기본값)
-   - 해결: `test-workflow-v4-media-demo` (정규화 + 환경 일치)
-   - 파일: `settings.py`, `.env`
-
-8. **ALB URL 동적 조회** ✅
-   - 문제: Health check에서 하드코딩된 URL 사용
-   - 해결: AWS CLI로 동적 조회 (`PROJECT_NAME` 기반)
-   - 파일: `deploy.yml`
-
-9. **Health Check Job AWS Credentials** ✅
-   - 문제: Health check job에서 AWS credentials 없음
-   - 해결: `configure-aws-credentials` 액션 추가
-   - 파일: `deploy.yml`
+1. **Docker 플랫폼 호환성 문제** — `exec format error` → Docker Buildx + `--platform linux/amd64`
+2. **UV 패키지 매니저 설치 방식** — `COPY --from` 플랫폼 불일치 → `pip install uv`
+3. **AWS 자격증명 처리** — ECS에서 필수 요구 → `env('AWS_ACCESS_KEY_ID', default=None)` + IAM Task Role
+4. **리소스 네이밍 불일치** — `test_workflow_v4` vs `test-workflow-v4` → deploy.yml에서 정규화
+5. **HTTPS 강제 리다이렉트** — demo 환경 SSL 없음 → `ENVIRONMENT` 변수로 prod만 HTTPS 강제
+6. **Django Admin Static 파일** — CSS/JS 미로드 → WhiteNoise + `collectstatic`
+7. **S3 버킷 이름 일관성** — `*-media-prod` 기본값 → `*-media-demo` 정규화
+8. **ALB URL 동적 조회** — 하드코딩 → AWS CLI 동적 조회 (`PROJECT_NAME` 기반)
+9. **Health Check Job AWS Credentials** — credentials 없음 → `configure-aws-credentials` 추가
 
 #### 최종 테스트 결과:
+- ✅ Terraform 인프라 생성 성공 (34개 리소스)
+- ✅ Docker 이미지 빌드 + ECR 푸시 + ECS Fargate 배포 성공
+- ✅ Django Admin 페이지 정상 표시 (CSS/JS 로드됨)
+- ✅ IAM Task Role 기반 S3 접근 가능
 
-- ✅ **Terraform 인프라 생성 성공** (34개 리소스)
-- ✅ **Docker 이미지 빌드 성공** (linux/amd64)
-- ✅ **ECR 푸시 성공**
-- ✅ **ECS Fargate 배포 성공**
-- ✅ **Django 애플리케이션 정상 실행**
-- ✅ **ALB를 통한 HTTP 접속 성공**
-- ✅ **Django Admin 페이지 정상 표시** (CSS/JS 로드됨)
-- ✅ **IAM Task Role 기반 S3 접근 가능**
+</details>
 
-**접속 URL:** `http://test-workflow-v4-alb-demo-1824358523.ap-northeast-2.elb.amazonaws.com/admin/`
+### Phase 5: Next.js 프론트엔드 템플릿 통합 (완료)
 
-#### 수정된 파일 목록:
+**PR**: [#2 feat/frontend-template-new → dev](https://github.com/ongsttt52/cookiecutter-django-aws/pull/2)
+**작업일**: 2026-02-21
 
-**Cookiecutter 템플릿:**
-- `{{cookiecutter.project_slug}}/backend/Dockerfile`
-- `{{cookiecutter.project_slug}}/backend/pyproject.toml`
-- `{{cookiecutter.project_slug}}/backend/config/settings.py`
-- `{{cookiecutter.project_slug}}/.github/workflows/deploy.yml`
+- ✅ `cookiecutter.json`에 `use_frontend` 선택 옵션 추가 (yes/no)
+- ✅ Django URL에 `/api` prefix 추가 (ALB 경로 기반 라우팅 준비)
+- ✅ Next.js 15 + React 19 + TypeScript + Tailwind CSS 4 프론트엔드 템플릿
+- ✅ `hooks/post_gen_project.py` — `use_frontend=no`일 때 frontend/ 자동 삭제
+- ✅ Terraform: ECR/ECS/ALB 리소스 리네이밍 (app → backend) + frontend 리소스 조건부 추가
+- ✅ ALB 경로 기반 라우팅: `/api/*` → Backend TG, `/*` → Frontend TG
+- ✅ GitHub Actions: backend/frontend 분리 빌드/배포 파이프라인
+- ✅ Docker Compose: frontend 서비스 조건부 추가
+- ✅ Makefile, .env.example, .gitignore, README 업데이트
 
-**테스트 프로젝트 (test_workflow_v4):**
-- `backend/Dockerfile`
-- `backend/pyproject.toml`
-- `backend/config/settings.py`
-- `.github/workflows/deploy.yml`
-- `.env`
+**아키텍처:**
+```
+ALB (port 80)
+├── Rule: /api/* → Backend TG (Django, port 8000)  [priority 1]
+└── Default: /*  → Frontend TG (Next.js, port 3000)
+```
+
+**코드 리뷰**: [`docs/reviews/2026-02-21-pr2-frontend-template.md`](docs/reviews/2026-02-21-pr2-frontend-template.md)
 
 ---
 
 ## 현재 작업 중 🚧
 
-**Phase 5: Next.js 프론트엔드 추가 및 Full-Stack 배포 (진행 중)**
+**Phase 6: 코드 리뷰 지적사항 수정**
 
-### 2025-10-24 작업 내역
+### 심각도 높음 (즉시 수정 필요)
 
-**테스트 프로젝트:** `test_workflow_v4` (demodev-lab 조직)
+- [ ] `_copy_without_render`로 인해 layout.tsx/page.tsx의 `{{cookiecutter.project_name}}`이 렌더링 안 됨
+- [ ] ECS 태스크에 `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS` 환경변수 누락
+- [ ] Health check 에러 응답에 `str(e)`로 인프라 정보 노출
+- [ ] `NEXT_PUBLIC_API_URL`이 빌드 타임 변수인데 런타임에 주입되는 구조적 문제
 
-#### 완료된 작업:
+### 심각도 중간 (수정 권장)
 
-1. **Next.js 프론트엔드 추가** ✅
-   - Next.js 16 + TypeScript + Tailwind CSS
-   - 개발용 Dockerfile (Vite dev server)
-   - 프로덕션용 Dockerfile.prod (Standalone build)
-   - `next.config.ts`에 standalone output 설정
-
-2. **Django API 경로 표준화** ✅
-   - 모든 API 엔드포인트에 `/api` prefix 추가
-   - Health check: `/api/health/`
-   - Admin: `/api/admin/`
-   - 환경변수 없이 하드코딩 (표준 패턴)
-
-3. **Terraform 인프라 업데이트** ✅
-   - ECR 리포지토리 분리:
-     - `test-workflow-v4-backend-demo`
-     - `test-workflow-v4-frontend-demo`
-   - ECR `force_delete` 옵션 추가 (이미지 있어도 삭제 가능)
-   - ALB 경로 기반 라우팅:
-     - `/` → Frontend Target Group (Port 3000)
-     - `/api/*` → Backend Target Group (Port 8000)
-   - ECS Task Definition 분리:
-     - Backend Task (Django + Gunicorn)
-     - Frontend Task (Next.js SSR)
-   - ECS Service 분리:
-     - Backend Service
-     - Frontend Service
-   - CloudWatch 로그 그룹 분리
-   - Target Group 헬스체크 경로:
-     - Frontend: `/`
-     - Backend: `/api/health/`
-
-4. **GitHub Actions 워크플로우 업데이트** ✅
-   - `deploy.yml` 전면 수정:
-     - Backend 빌드 job 추가
-     - Frontend 빌드 job 추가 (Dockerfile.prod 사용)
-     - 병렬 빌드 (build-backend, build-frontend)
-     - 순차 배포 (Backend → Frontend)
-     - 헬스체크 분리 (Frontend `/`, Backend `/api/health/`)
-   - 환경 변수 업데이트:
-     - `ECR_BACKEND`, `ECR_FRONTEND`
-     - `ECS_BACKEND_SERVICE`, `ECS_FRONTEND_SERVICE`
-
-5. **환경변수 및 URL 전략** ✅
-   - 로컬 개발: `NEXT_PUBLIC_API_URL=http://localhost:8000`
-   - AWS 배포: `NEXT_PUBLIC_API_URL=` (빈 값 = 상대 경로 `/api`)
-   - CORS 불필요 (같은 ALB 오리진)
-   - docker-compose.yml 업데이트 (frontend 서비스 추가)
-
-6. **Docker 설정** ✅
-   - Frontend Dockerfile (개발용, Hot reload)
-   - Frontend Dockerfile.prod (프로덕션용, Multi-stage build)
-   - Backend Dockerfile 유지 (이미 완성됨)
-   - Platform: linux/amd64 (ECS Fargate 호환)
-
-#### 현재 상태:
-
-- ✅ 로컬 docker-compose 테스트 완료 (Backend 정상 작동)
-- 🔄 **AWS 배포 진행 중:**
-  - Terraform 인프라 재생성 필요 (ECR 이름 변경으로 인해)
-  - Destroy 워크플로우 실행 중 (force_delete 추가로 해결)
-  - 다음: Create Infrastructure → Deploy
-
-#### 다음 작업:
-
-- [ ] AWS 인프라 재생성 (Destroy → Create)
-- [ ] Frontend + Backend 동시 배포 테스트
-- [ ] ALB URL 접속 테스트
-- [ ] 경로 라우팅 확인 (/, /api/*)
-- [ ] 간단한 API 엔드포인트 작성 및 Frontend 연동 테스트
-- [ ] S3 Presigned URL 파일 업로드/다운로드 테스트
-- [ ] 성공 후 cookiecutter 템플릿으로 변경사항 이동
-
-#### 수정된 파일 (test_workflow_v4):
-
-**새로 추가:**
-- `frontend/` (Next.js 프로젝트 전체)
-- `frontend/Dockerfile`
-- `frontend/Dockerfile.prod`
-
-**수정:**
-- `backend/config/urls.py` (API prefix 추가)
-- `docker-compose.yml` (frontend 서비스 추가)
-- `terraform/ecr.tf` (Backend/Frontend 분리, force_delete)
-- `terraform/alb.tf` (경로 기반 라우팅)
-- `terraform/ecs.tf` (Backend/Frontend Task/Service 분리)
-- `terraform/outputs.tf` (ECR/Service 이름 업데이트)
-- `.github/workflows/deploy.yml` (Frontend 빌드/배포 추가)
-- `.env` (DATABASE_URL 수정, NEXT_PUBLIC_API_URL 추가)
+- [ ] Backend Dockerfile에 `--platform linux/amd64` 미적용
+- [ ] Dockerfile에서 COPY 중복 (entrypoint.sh)
+- [ ] ALB/TG 이름 32자 제한 위반 가능 (project_name 길이 검증 없음)
+- [ ] Frontend Dockerfile에서 package-lock.json 없이 npm install
+- [ ] Terraform에서 `replace()` vs `local.project_name_normalized` 혼용
+- [ ] README에서 Redis가 무조건 시작된다고 안내 (조건 분기 누락)
 
 ---
 
 ## 다음 단계
 
-**우선순위 1: Full-Stack 배포 완료**
-- [ ] AWS 인프라 재생성 완료
-- [ ] Frontend + Backend 배포 테스트
-- [ ] API 연동 테스트 페이지 작성
-- [ ] S3 파일 업로드 테스트
+**우선순위 1: 코드 리뷰 지적사항 수정**
+- [ ] 심각도 높음 4건 수정
+- [ ] 심각도 중간 6건 수정
 
-**우선순위 2: cookiecutter 템플릿 통합**
-- [ ] test_workflow_v4 변경사항을 템플릿으로 이동
-- [ ] README 업데이트 (Frontend 추가)
-- [ ] 새 프로젝트로 전체 플로우 테스트
+**우선순위 2: End-to-End 배포 테스트**
+- [ ] `cookiecutter` 실행 → `use_frontend: yes/no` 양쪽 테스트
+- [ ] `docker compose up` 로컬 테스트
+- [ ] `terraform validate` 성공 확인
+- [ ] AWS 배포 → ALB 라우팅 확인 (`/`, `/api/*`)
 
-**우선순위 3: 추가 기능 (선택 사항)**
-- [ ] Migration 자동 실행 (entrypoint.sh)
+**우선순위 3: 추가 기능 (선택)**
+- [ ] EC2 All-in-One 배포 옵션 추가
 - [ ] Superuser 자동 생성 스크립트
 - [ ] CloudWatch 로그 필터 설정
-- [ ] EC2 All-in-One 배포 옵션 추가
 
 ---
 
