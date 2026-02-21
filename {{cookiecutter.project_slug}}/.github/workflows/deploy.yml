@@ -9,10 +9,14 @@ on:
 env:
   AWS_REGION: {% endraw %}{{cookiecutter.aws_region}}{% raw %}
   PROJECT_NAME: {% endraw %}{{ cookiecutter.project_slug | replace('_', '-') }}{% raw %}
-  ECR_REPOSITORY: {% endraw %}{{ cookiecutter.project_slug | replace('_', '-') }}{% raw %}-demo
+  ECR_BACKEND: {% endraw %}{{ cookiecutter.project_slug | replace('_', '-') }}{% raw %}-backend-demo
   ECS_CLUSTER: {% endraw %}{{ cookiecutter.project_slug | replace('_', '-') }}{% raw %}-cluster-demo
-  ECS_SERVICE: {% endraw %}{{ cookiecutter.project_slug | replace('_', '-') }}{% raw %}-service-demo
-
+  ECS_BACKEND_SERVICE: {% endraw %}{{ cookiecutter.project_slug | replace('_', '-') }}{% raw %}-backend-service-demo{% endraw %}
+{% if cookiecutter.use_frontend == "yes" %}{% raw %}
+  ECR_FRONTEND: {% endraw %}{{ cookiecutter.project_slug | replace('_', '-') }}{% raw %}-frontend-demo
+  ECS_FRONTEND_SERVICE: {% endraw %}{{ cookiecutter.project_slug | replace('_', '-') }}{% raw %}-frontend-service-demo{% endraw %}
+{% endif %}
+{% raw %}
 jobs:
   # Job 0: 인프라 존재 확인
   check-infrastructure:
@@ -36,7 +40,7 @@ jobs:
 
           # ECR repository 존재 확인
           if aws ecr describe-repositories \
-            --repository-names ${{ env.ECR_REPOSITORY }} \
+            --repository-names ${{ env.ECR_BACKEND }} \
             --region ${{ env.AWS_REGION }} 2>/dev/null; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "✅ Infrastructure exists - proceeding with deployment"
@@ -52,15 +56,14 @@ jobs:
             echo "Skipping deployment..."
           fi
 
-  # Job 1: Docker 이미지 빌드 & ECR 푸시
-  build-and-push:
-    name: Build and Push Docker Image
+  # Job 1: Backend Docker 이미지 빌드 & ECR 푸시
+  build-backend:
+    name: Build and Push Backend Image
     runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}
     needs: check-infrastructure
     if: needs.check-infrastructure.outputs.exists == 'true'
     outputs:
       image_tag: ${{ steps.meta.outputs.tags }}
-      ecr_url: ${{ steps.ecr.outputs.url }}
 
     steps:
       - name: Checkout code
@@ -76,12 +79,11 @@ jobs:
       - name: Get ECR repository URL
         id: ecr
         run: |
-          ECR_URL="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}"
+          ECR_URL="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_BACKEND }}"
           echo "url=$ECR_URL" >> $GITHUB_OUTPUT
-          echo "📦 ECR URL: $ECR_URL"
+          echo "📦 Backend ECR URL: $ECR_URL"
 
       - name: Login to Amazon ECR
-        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set up Docker Buildx
@@ -106,13 +108,71 @@ jobs:
           docker push ${{ steps.meta.outputs.latest }}
 
       - name: Image digest
-        run: echo "✅ Image pushed - ${{ steps.meta.outputs.tags }}"
+        run: echo "✅ Backend image pushed - ${{ steps.meta.outputs.tags }}"
+{% endraw %}
+{% if cookiecutter.use_frontend == "yes" %}
+{% raw %}
+  # Job 1b: Frontend Docker 이미지 빌드 & ECR 푸시
+  build-frontend:
+    name: Build and Push Frontend Image
+    runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}
+    needs: check-infrastructure
+    if: needs.check-infrastructure.outputs.exists == 'true'
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
 
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get ECR repository URL
+        id: ecr
+        run: |
+          ECR_URL="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_FRONTEND }}"
+          echo "url=$ECR_URL" >> $GITHUB_OUTPUT
+          echo "📦 Frontend ECR URL: $ECR_URL"
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata for Docker
+        id: meta
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          echo "tags=${{ steps.ecr.outputs.url }}:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "latest=${{ steps.ecr.outputs.url }}:latest" >> $GITHUB_OUTPUT
+
+      - name: Build Docker image
+        working-directory: frontend
+        run: |
+          docker buildx build --platform linux/amd64 --load -f Dockerfile.prod -t ${{ steps.meta.outputs.tags }} .
+          docker tag ${{ steps.meta.outputs.tags }} ${{ steps.meta.outputs.latest }}
+
+      - name: Push Docker image to ECR
+        run: |
+          docker push ${{ steps.meta.outputs.tags }}
+          docker push ${{ steps.meta.outputs.latest }}
+
+      - name: Image digest
+        run: echo "✅ Frontend image pushed - ${{ steps.meta.outputs.tags }}"
+{% endraw %}
+{% endif %}
+{% raw %}
   # Job 2: ECS 서비스 배포
   deploy:
     name: Deploy to ECS
     runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}
-    needs: [check-infrastructure, build-and-push]
+    needs: [check-infrastructure, build-backend{% endraw %}{% if cookiecutter.use_frontend == "yes" %}, build-frontend{% endif %}{% raw %}]
     if: needs.check-infrastructure.outputs.exists == 'true'
 
     steps:
@@ -123,26 +183,54 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Force new ECS deployment
+      - name: Force new Backend ECS deployment
         run: |
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
-            --service ${{ env.ECS_SERVICE }} \
+            --service ${{ env.ECS_BACKEND_SERVICE }} \
             --force-new-deployment \
             --region ${{ env.AWS_REGION }}
 
-          echo "🚀 Deployment triggered for ${{ env.ECS_SERVICE }}"
-
-      - name: Wait for ECS service to be stable
+          echo "🚀 Backend deployment triggered"
+{% endraw %}
+{% if cookiecutter.use_frontend == "yes" %}
+{% raw %}
+      - name: Force new Frontend ECS deployment
         run: |
-          echo "⏳ Waiting for ECS service to stabilize..."
-          aws ecs wait services-stable \
+          aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
+            --service ${{ env.ECS_FRONTEND_SERVICE }} \
+            --force-new-deployment \
             --region ${{ env.AWS_REGION }}
 
-          echo "✅ ECS service is now stable"
+          echo "🚀 Frontend deployment triggered"
+{% endraw %}
+{% endif %}
+{% raw %}
+      - name: Wait for Backend service to be stable
+        run: |
+          echo "⏳ Waiting for Backend service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_BACKEND_SERVICE }} \
+            --region ${{ env.AWS_REGION }}
 
+          echo "✅ Backend service is now stable"
+{% endraw %}
+{% if cookiecutter.use_frontend == "yes" %}
+{% raw %}
+      - name: Wait for Frontend service to be stable
+        run: |
+          echo "⏳ Waiting for Frontend service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_FRONTEND_SERVICE }} \
+            --region ${{ env.AWS_REGION }}
+
+          echo "✅ Frontend service is now stable"
+{% endraw %}
+{% endif %}
+{% raw %}
       - name: Get ALB URL
         id: alb
         run: |
@@ -158,10 +246,12 @@ jobs:
         run: |
           echo "🎉 Deployment completed successfully!"
           echo ""
-          echo "📦 Image: ${{ needs.build-and-push.outputs.image_tag }}"
+          echo "📦 Backend Image: ${{ needs.build-backend.outputs.image_tag }}"{% endraw %}
+{% if cookiecutter.use_frontend == "yes" %}{% raw %}
+          echo "📦 Frontend Image: ${{ needs.build-frontend.outputs.image_tag }}"{% endraw %}
+{% endif %}{% raw %}
           echo "🌐 App URL: ${{ steps.alb.outputs.url }}"
           echo "🔧 ECS Cluster: ${{ env.ECS_CLUSTER }}"
-          echo "🚀 ECS Service: ${{ env.ECS_SERVICE }}"
           echo ""
           echo "Access your application at:"
           echo "${{ steps.alb.outputs.url }}"
@@ -195,21 +285,51 @@ jobs:
       - name: Wait for application to start
         run: sleep 30
 
-      - name: Health check
+      - name: Backend health check
         run: |
           APP_URL="${{ steps.alb.outputs.url }}"
           MAX_ATTEMPTS=10
           ATTEMPT=1
 
-          echo "🏥 Starting health check for $APP_URL"
+          echo "🏥 Starting backend health check for $APP_URL/api/health/"
 
           while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
             echo "Attempt $ATTEMPT/$MAX_ATTEMPTS..."
 
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/admin/" || echo "000")
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/api/health/" || echo "000")
 
-            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "301" ]; then
-              echo "✅ Health check passed! (HTTP $HTTP_CODE)"
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Backend health check passed! (HTTP $HTTP_CODE)"
+              exit 0
+            fi
+
+            echo "⏳ Received HTTP $HTTP_CODE, retrying in 10 seconds..."
+            sleep 10
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          echo "⚠️  Backend health check failed after $MAX_ATTEMPTS attempts"
+          echo "Check ECS logs:"
+          echo "aws logs tail /ecs/{% endraw %}{{ cookiecutter.project_slug | replace('_', '-') }}{% raw %}-backend-demo --follow"
+          exit 1
+{% endraw %}
+{% if cookiecutter.use_frontend == "yes" %}
+{% raw %}
+      - name: Frontend health check
+        run: |
+          APP_URL="${{ steps.alb.outputs.url }}"
+          MAX_ATTEMPTS=10
+          ATTEMPT=1
+
+          echo "🏥 Starting frontend health check for $APP_URL/"
+
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS..."
+
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/" || echo "000")
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Frontend health check passed! (HTTP $HTTP_CODE)"
               echo ""
               echo "🎊 Deployment successful!"
               echo "🌐 Application URL: $APP_URL"
@@ -221,8 +341,9 @@ jobs:
             ATTEMPT=$((ATTEMPT + 1))
           done
 
-          echo "⚠️  Health check failed after $MAX_ATTEMPTS attempts"
-          echo "Please check ECS logs:"
-          echo "aws logs tail /ecs/{% endraw %}{{cookiecutter.project_slug}}{% raw %}-demo --follow"
+          echo "⚠️  Frontend health check failed after $MAX_ATTEMPTS attempts"
+          echo "Check ECS logs:"
+          echo "aws logs tail /ecs/{% endraw %}{{ cookiecutter.project_slug | replace('_', '-') }}{% raw %}-frontend-demo --follow"
           exit 1
 {% endraw %}
+{% endif %}

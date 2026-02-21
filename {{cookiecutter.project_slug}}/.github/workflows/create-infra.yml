@@ -51,7 +51,7 @@ jobs:
         id: output
         working-directory: terraform
         run: |
-          ECR_URL=$(terraform output -raw ecr_repository_url)
+          ECR_URL=$(terraform output -raw ecr_backend_url)
           APP_URL=$(terraform output -raw app_url)
           echo "ecr_url=$ECR_URL" >> $GITHUB_OUTPUT
           echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
