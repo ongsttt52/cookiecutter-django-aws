@@ -51,6 +51,16 @@ resource "aws_security_group" "ecs" {
     security_groups = [aws_security_group.alb.id]
   }
 
+{% if cookiecutter.use_frontend == "yes" %}
+  # ALB에서 Next.js 포트로 접근 허용
+  ingress {
+    from_port       = 3000
+    to_port         = 3000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+{% endif %}
+
   # 아웃바운드 모두 허용 (외부 API 호출, S3 접근 등)
   egress {
     from_port   = 0

@@ -8,6 +8,7 @@
 
   "use_celery": ["yes", "no"],
   "use_websocket": ["yes", "no"],
+  "use_frontend": ["yes", "no"],
 
   "aws_region": "ap-northeast-2",
   "aws_deployment": "ecs-fargate",
@@ -23,6 +24,9 @@
     "*.pyo",
     "*.pyd",
     ".git",
-    ".gitignore"
+    ".gitignore",
+    "frontend/src/**",
+    "frontend/tsconfig.json",
+    "frontend/postcss.config.mjs"
   ]
 }

@@ -77,6 +77,15 @@ override.tf.json
 .AppleDouble
 .LSOverride
 
+# Node.js / Next.js
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
 # Temporary files
 *.tmp
 *.bak

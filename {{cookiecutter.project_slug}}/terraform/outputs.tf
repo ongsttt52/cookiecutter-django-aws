@@ -8,11 +8,19 @@ output "app_url" {
   value       = "http://${aws_lb.main.dns_name}"
 }
 
-# ECR 리포지토리 URL
-output "ecr_repository_url" {
-  description = "Docker 이미지 푸시할 ECR 주소"
-  value       = aws_ecr_repository.app.repository_url
+# Backend ECR 리포지토리 URL
+output "ecr_backend_url" {
+  description = "Backend Docker 이미지 푸시할 ECR 주소"
+  value       = aws_ecr_repository.backend.repository_url
 }
+
+{% if cookiecutter.use_frontend == "yes" %}
+# Frontend ECR 리포지토리 URL
+output "ecr_frontend_url" {
+  description = "Frontend Docker 이미지 푸시할 ECR 주소"
+  value       = aws_ecr_repository.frontend.repository_url
+}
+{% endif %}
 
 # S3 버킷 이름
 output "s3_bucket_name" {
@@ -40,11 +48,19 @@ output "ecs_cluster_name" {
   value       = aws_ecs_cluster.main.name
 }
 
-# ECS 서비스 이름
-output "ecs_service_name" {
-  description = "ECS 서비스 이름"
-  value       = aws_ecs_service.app.name
+# Backend ECS 서비스 이름
+output "ecs_backend_service_name" {
+  description = "Backend ECS 서비스 이름"
+  value       = aws_ecs_service.backend.name
 }
+
+{% if cookiecutter.use_frontend == "yes" %}
+# Frontend ECS 서비스 이름
+output "ecs_frontend_service_name" {
+  description = "Frontend ECS 서비스 이름"
+  value       = aws_ecs_service.frontend.name
+}
+{% endif %}
 
 # 리전 정보
 output "aws_region" {

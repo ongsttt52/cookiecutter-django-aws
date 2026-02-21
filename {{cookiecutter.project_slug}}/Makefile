@@ -199,9 +199,11 @@ dev:
 	@echo "✅ Services started!"
 	@echo ""
 	@echo "Access at:"
-	@echo "  Backend API:  http://localhost:8000"
-	@echo "  Admin Panel:  http://localhost:8000/admin/"
-{% if cookiecutter.use_websocket == "yes" %}	@echo "  WebSocket:    ws://localhost:8001"
+	@echo "  Backend API:  http://localhost:8000/api/"
+	@echo "  Admin Panel:  http://localhost:8000/api/admin/"
+	@echo "  API Docs:     http://localhost:8000/api/docs/"
+{% if cookiecutter.use_frontend == "yes" %}	@echo "  Frontend:     http://localhost:3000"
+{% endif %}{% if cookiecutter.use_websocket == "yes" %}	@echo "  WebSocket:    ws://localhost:8001"
 {% endif %}	@echo ""
 	@echo "Useful commands:"
 	@echo "  View logs:       docker compose logs -f"
@@ -247,30 +249,42 @@ destroy-aws-manual:
 	PROJECT_SLUG=$(PROJECT_NAME_NORMALIZED); \
 	REGION=$(AWS_REGION); \
 	\
-	echo "1️⃣  Deleting ECS Service..."; \
+	echo "1️⃣  Deleting ECS Services..."; \
 	aws ecs update-service \
 		--cluster $${PROJECT_SLUG}-cluster-demo \
-		--service $${PROJECT_SLUG}-service-demo \
+		--service $${PROJECT_SLUG}-backend-service-demo \
 		--desired-count 0 \
-		--region $$REGION 2>/dev/null || echo "  ⚠️  ECS Service not found or already deleted"; \
+		--region $$REGION 2>/dev/null || echo "  ⚠️  Backend ECS Service not found or already deleted"; \
+	aws ecs update-service \
+		--cluster $${PROJECT_SLUG}-cluster-demo \
+		--service $${PROJECT_SLUG}-frontend-service-demo \
+		--desired-count 0 \
+		--region $$REGION 2>/dev/null || echo "  ⚠️  Frontend ECS Service not found (may not exist)"; \
 	sleep 10; \
 	aws ecs delete-service \
 		--cluster $${PROJECT_SLUG}-cluster-demo \
-		--service $${PROJECT_SLUG}-service-demo \
+		--service $${PROJECT_SLUG}-backend-service-demo \
 		--force \
-		--region $$REGION 2>/dev/null || echo "  ⚠️  Could not delete ECS Service"; \
+		--region $$REGION 2>/dev/null || echo "  ⚠️  Could not delete Backend ECS Service"; \
+	aws ecs delete-service \
+		--cluster $${PROJECT_SLUG}-cluster-demo \
+		--service $${PROJECT_SLUG}-frontend-service-demo \
+		--force \
+		--region $$REGION 2>/dev/null || echo "  ⚠️  Could not delete Frontend ECS Service (may not exist)"; \
 	echo ""; \
 	\
 	echo "2️⃣  Deleting ECS Task Definitions..."; \
-	TASK_DEFS=$$(aws ecs list-task-definitions \
-		--family-prefix $${PROJECT_SLUG}-demo \
-		--region $$REGION \
-		--query 'taskDefinitionArns[]' \
-		--output text 2>/dev/null); \
-	for task_def in $$TASK_DEFS; do \
-		aws ecs deregister-task-definition \
-			--task-definition $$task_def \
-			--region $$REGION 2>/dev/null; \
+	for FAMILY_PREFIX in $${PROJECT_SLUG}-backend-demo $${PROJECT_SLUG}-frontend-demo; do \
+		TASK_DEFS=$$(aws ecs list-task-definitions \
+			--family-prefix $$FAMILY_PREFIX \
+			--region $$REGION \
+			--query 'taskDefinitionArns[]' \
+			--output text 2>/dev/null); \
+		for task_def in $$TASK_DEFS; do \
+			aws ecs deregister-task-definition \
+				--task-definition $$task_def \
+				--region $$REGION 2>/dev/null; \
+		done; \
 	done; \
 	echo ""; \
 	\
@@ -328,17 +342,24 @@ destroy-aws-manual:
 		--region $$REGION 2>/dev/null || echo "  ⚠️  S3 Bucket not found"; \
 	echo ""; \
 	\
-	echo "9️⃣  Deleting ECR Repository..."; \
+	echo "9️⃣  Deleting ECR Repositories..."; \
 	aws ecr delete-repository \
-		--repository-name $${PROJECT_SLUG}-demo \
+		--repository-name $${PROJECT_SLUG}-backend-demo \
 		--force \
-		--region $$REGION 2>/dev/null || echo "  ⚠️  ECR Repository not found"; \
+		--region $$REGION 2>/dev/null || echo "  ⚠️  Backend ECR Repository not found"; \
+	aws ecr delete-repository \
+		--repository-name $${PROJECT_SLUG}-frontend-demo \
+		--force \
+		--region $$REGION 2>/dev/null || echo "  ⚠️  Frontend ECR Repository not found (may not exist)"; \
 	echo ""; \
 	\
 	echo "🔟  Deleting CloudWatch Log Groups..."; \
 	aws logs delete-log-group \
-		--log-group-name /ecs/$${PROJECT_SLUG}-demo \
-		--region $$REGION 2>/dev/null || echo "  ⚠️  Log group not found"; \
+		--log-group-name /ecs/$${PROJECT_SLUG}-backend-demo \
+		--region $$REGION 2>/dev/null || echo "  ⚠️  Backend log group not found"; \
+	aws logs delete-log-group \
+		--log-group-name /ecs/$${PROJECT_SLUG}-frontend-demo \
+		--region $$REGION 2>/dev/null || echo "  ⚠️  Frontend log group not found (may not exist)"; \
 	echo ""; \
 	\
 	echo "1️⃣1️⃣  Waiting for resources to finish deleting..."; \
