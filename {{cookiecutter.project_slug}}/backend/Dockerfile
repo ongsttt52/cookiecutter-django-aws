@@ -31,8 +31,9 @@ RUN uv sync --no-cache
 # Copy project
 COPY . .
 
-# Collect static files for Django Admin (before switching to non-root user)
-RUN uv run python manage.py collectstatic --noinput
+# Set up entrypoint (migrate + collectstatic on startup)
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Run as non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
@@ -41,5 +42,6 @@ USER appuser
 # Expose port
 EXPOSE 8000
 
-# Default command (can be overridden in docker-compose)
+# entrypoint handles migrate + collectstatic before starting the server
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["uv", "run", "gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]
