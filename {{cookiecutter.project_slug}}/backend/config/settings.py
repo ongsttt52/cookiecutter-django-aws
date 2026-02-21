@@ -37,7 +37,7 @@ INSTALLED_APPS = [
     'channels',
 {% endif -%}
     # Local apps
-    # Add your apps here
+    'apps.core',
 ]
 
 MIDDLEWARE = [
