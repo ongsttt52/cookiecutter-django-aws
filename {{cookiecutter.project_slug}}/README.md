@@ -12,6 +12,9 @@ Django REST API project with AWS deployment
 
 - **Backend**: Django REST Framework
 - **Authentication**: JWT
+{% if cookiecutter.use_frontend == "yes" -%}
+- **Frontend**: Next.js 15 + React 19 + TypeScript + Tailwind CSS
+{% endif -%}
 {% if cookiecutter.use_celery == "yes" or cookiecutter.use_websocket == "yes" -%}
 - **Cache**: Redis
 {% endif -%}
@@ -62,6 +65,9 @@ This will start:
 - PostgreSQL database (port 5432)
 - Redis (port 6379)
 - Django backend (port 8000)
+{% if cookiecutter.use_frontend == "yes" -%}
+- Next.js frontend (port 3000)
+{% endif -%}
 {% if cookiecutter.use_websocket == "yes" -%}
 - WebSocket server (port 8001)
 {% endif -%}
@@ -81,8 +87,11 @@ docker compose exec backend uv run python manage.py createsuperuser
 ```
 
 6. Access the application:
-- Admin: http://localhost:8000/admin/
-- API Docs: http://localhost:8000/api/docs/ (when configured)
+- Admin: http://localhost:8000/api/admin/
+- API Docs: http://localhost:8000/api/docs/
+{% if cookiecutter.use_frontend == "yes" -%}
+- Frontend: http://localhost:3000
+{% endif -%}
 {% if cookiecutter.use_websocket == "yes" -%}
 - WebSocket: ws://localhost:8001/
 {% endif -%}
@@ -91,16 +100,34 @@ docker compose exec backend uv run python manage.py createsuperuser
 
 ```
 {{cookiecutter.project_slug}}/
-├── backend/              # Django application
+├── backend/              # Django REST API
 │   ├── apps/            # Django apps
 │   ├── config/          # Django settings
-│   └── requirements/    # Python dependencies
-├── docker/              # Dockerfiles
+│   └── pyproject.toml   # Python dependencies
+{% if cookiecutter.use_frontend == "yes" -%}
+├── frontend/            # Next.js frontend
+│   ├── src/app/         # App Router pages
+│   ├── package.json     # Node.js dependencies
+│   └── Dockerfile.prod  # Production Docker image
+{% endif -%}
 ├── terraform/           # Infrastructure as Code
 ├── .github/workflows/   # CI/CD pipelines
-└── docs/               # Documentation
+└── docker-compose.yml   # Local development
 ```
 
+{% if cookiecutter.use_frontend == "yes" -%}
+## Architecture
+
+```
+ALB (port 80)
+├── /api/*  → Backend (Django, port 8000)
+└── /*      → Frontend (Next.js, port 3000)
+```
+
+The frontend proxies `/api/*` requests to the backend through Next.js rewrites in local development.
+In production, ALB listener rules handle the routing.
+
+{% endif -%}
 ## Development
 
 ### Running Tests

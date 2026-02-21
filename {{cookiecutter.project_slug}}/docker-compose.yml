@@ -102,5 +102,23 @@ services:
       - redis
 
 {% endif %}
+{% if cookiecutter.use_frontend == "yes" %}
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: {{cookiecutter.project_slug}}_frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+    depends_on:
+      - backend
+
+{% endif %}
 volumes:
   postgres_data:
