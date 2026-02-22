@@ -2,6 +2,7 @@
 Django settings for {{cookiecutter.project_slug}} project.
 """
 
+from datetime import timedelta
 from pathlib import Path
 import environ
 import os
@@ -176,8 +177,6 @@ REST_FRAMEWORK = {
 }
 
 # JWT
-from datetime import timedelta
-
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
