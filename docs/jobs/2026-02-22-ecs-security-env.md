@@ -2,7 +2,9 @@
 
 > **작업일**: 2026-02-22
 > **브랜치**: `dev`
-> **커밋**: `8ec27af` — fix: Add SECRET_KEY and ALLOWED_HOSTS to ECS Task Definition
+> **커밋**:
+> - `42f38f6` — fix: Add SECRET_KEY and ALLOWED_HOSTS to ECS Task Definition
+> - `c990f21` — fix: Remove SECRET_KEY default value in settings.py
 > **관련 리뷰**: [PR#2 코드 리뷰](../reviews/2026-02-21-pr2-frontend-template.md) — 심각도 높음 #3
 
 ---
@@ -51,7 +53,27 @@ variable "django_secret_key" {
 -var="django_secret_key=${{ secrets.DJANGO_SECRET_KEY }}"
 ```
 
-### 5. `Makefile` — DJANGO_SECRET_KEY 자동 생성
+### 5. `backend/config/settings.py` — SECRET_KEY 기본값 제거
+
+```python
+# Before
+SECRET_KEY = env('SECRET_KEY', default='django-insecure-change-this-in-production')
+
+# After
+SECRET_KEY = env('SECRET_KEY')
+```
+
+- 환경변수 미설정 시 Django가 즉시 에러 발생 → insecure 키로 동작하는 실수 방지
+
+### 6. `.env.example` — 로컬 개발용 키 값 포함
+
+```bash
+SECRET_KEY=django-insecure-local-dev-key-change-in-production
+```
+
+- `cp .env.example .env`로 로컬 개발 즉시 가능
+
+### 7. `Makefile` — DJANGO_SECRET_KEY 자동 생성
 
 `make init`과 `make setup-secrets` 모두에 추가:
 
@@ -72,6 +94,8 @@ echo "  ✓ DJANGO_SECRET_KEY auto-generated"
 | `.github/workflows/create-infra.yml` | `-var` 인자 추가 |
 | `.github/workflows/destroy.yml` | `-var` 인자 추가 |
 | `Makefile` | 시크릿 자동 생성 로직 추가 |
+| `backend/config/settings.py` | SECRET_KEY 기본값 제거 |
+| `.env.example` | 로컬 개발용 SECRET_KEY 값 변경 |
 
 ## 흐름
 
