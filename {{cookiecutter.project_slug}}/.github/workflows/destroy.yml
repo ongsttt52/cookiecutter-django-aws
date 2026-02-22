@@ -54,6 +54,7 @@ jobs:
             -var="project_name={% endraw %}{{cookiecutter.project_slug}}{% raw %}" \
             -var="environment=demo" \
             -var="db_password=${{ secrets.DB_PASSWORD }}" \
+            -var="django_secret_key=${{ secrets.DJANGO_SECRET_KEY }}" \
             -auto-approve
 
           echo "✅ Infrastructure destroyed successfully!"

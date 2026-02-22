@@ -1,6 +1,6 @@
 # Django AWS Cookiecutter Template - 진행상황
 
-**마지막 업데이트:** 2026-02-21
+**마지막 업데이트:** 2026-02-22
 
 ---
 
@@ -199,35 +199,38 @@ ALB (port 80)
 
 ---
 
+### Phase 6: 코드 리뷰 지적사항 수정 (완료)
+
+**작업일**: 2026-02-22
+
+#### 심각도 높음
+
+- [x] H1: `_copy_without_render`에서 `frontend/src/**` 제거 — TSX의 `{children}`은 Jinja2 `{{ }}`와 충돌하지 않음
+- [x] H2: Health check `str(e)` → `logger.error()` + `"disconnected"` 제네릭 메시지로 인프라 정보 노출 차단
+- [x] H3: `NEXT_PUBLIC_API_URL` 빌드타임 문제 — 프로덕션에서 rewrites 비활성화 (ALB가 라우팅), ECS에서 `NEXT_PUBLIC_API_URL` 제거
+- [x] (이전 완료) ECS 태스크에 `SECRET_KEY`, `ALLOWED_HOSTS` 환경변수 추가 (`b991c4f`, `42f38f6`)
+
+#### 심각도 중간
+
+- [x] M1: Backend Dockerfile에 `--platform=linux/amd64` 추가
+- [x] M2: Dockerfile 중복 `COPY entrypoint.sh` 제거 (이미 `COPY . .`에 포함)
+- [x] M3: `project_name` 18자 이하 validation 추가 (ALB/TG 32자 제한 대응)
+- [x] M4: `post_gen_project.py`에 `npm install --package-lock-only` 추가 (package-lock.json 자동 생성)
+- [x] M5: Terraform 9개 파일에서 인라인 `replace()` → `local.project_name_normalized` 통일
+- [x] M6: `settings.py`의 `from datetime import timedelta`를 파일 상단으로 이동 (PEP 8)
+- [x] M7: ECS Backend 환경변수에 `CORS_ALLOWED_ORIGINS` 추가
+
+---
+
 ## 현재 작업 중 🚧
 
-**Phase 6: 코드 리뷰 지적사항 수정**
-
-### 심각도 높음 (즉시 수정 필요)
-
-- [ ] `_copy_without_render`로 인해 layout.tsx/page.tsx의 `{{cookiecutter.project_name}}`이 렌더링 안 됨
-- [ ] ECS 태스크에 `SECRET_KEY`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS` 환경변수 누락
-- [ ] Health check 에러 응답에 `str(e)`로 인프라 정보 노출
-- [ ] `NEXT_PUBLIC_API_URL`이 빌드 타임 변수인데 런타임에 주입되는 구조적 문제
-
-### 심각도 중간 (수정 권장)
-
-- [ ] Backend Dockerfile에 `--platform linux/amd64` 미적용
-- [ ] Dockerfile에서 COPY 중복 (entrypoint.sh)
-- [ ] ALB/TG 이름 32자 제한 위반 가능 (project_name 길이 검증 없음)
-- [ ] Frontend Dockerfile에서 package-lock.json 없이 npm install
-- [ ] Terraform에서 `replace()` vs `local.project_name_normalized` 혼용
-- [ ] README에서 Redis가 무조건 시작된다고 안내 (조건 분기 누락)
+(없음)
 
 ---
 
 ## 다음 단계
 
-**우선순위 1: 코드 리뷰 지적사항 수정**
-- [ ] 심각도 높음 4건 수정
-- [ ] 심각도 중간 6건 수정
-
-**우선순위 2: End-to-End 배포 테스트**
+**우선순위 1: End-to-End 배포 테스트**
 - [ ] `cookiecutter` 실행 → `use_frontend: yes/no` 양쪽 테스트
 - [ ] `docker compose up` 로컬 테스트
 - [ ] `terraform validate` 성공 확인

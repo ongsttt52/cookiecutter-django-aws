@@ -2,6 +2,7 @@
 Django settings for {{cookiecutter.project_slug}} project.
 """
 
+from datetime import timedelta
 from pathlib import Path
 import environ
 import os
@@ -16,7 +17,7 @@ env = environ.Env(
 environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
 # SECURITY
-SECRET_KEY = env('SECRET_KEY', default='django-insecure-change-this-in-production')
+SECRET_KEY = env('SECRET_KEY')
 DEBUG = env('DEBUG')
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['*'])
 
@@ -176,8 +177,6 @@ REST_FRAMEWORK = {
 }
 
 # JWT
-from datetime import timedelta
-
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),

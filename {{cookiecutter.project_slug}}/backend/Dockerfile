@@ -1,5 +1,5 @@
 # Python {{cookiecutter.python_version}} base image
-FROM python:{{cookiecutter.python_version}}-slim AS base
+FROM --platform=linux/amd64 python:{{cookiecutter.python_version}}-slim AS base
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -32,7 +32,6 @@ RUN uv sync --no-cache
 COPY . .
 
 # Set up entrypoint (migrate + collectstatic on startup)
-COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 # Run as non-root user

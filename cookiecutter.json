@@ -25,7 +25,6 @@
     "*.pyd",
     ".git",
     ".gitignore",
-    "frontend/src/**",
     "frontend/tsconfig.json",
     "frontend/postcss.config.mjs"
   ]

@@ -3,6 +3,11 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   async rewrites() {
+    // In production, ALB handles /api/* routing to the backend.
+    // Rewrites are only needed for local development (docker-compose).
+    if (process.env.NODE_ENV === "production") {
+      return [];
+    }
     return [
       {
         source: "/api/:path*",

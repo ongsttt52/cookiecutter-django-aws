@@ -7,6 +7,11 @@ variable "project_name" {
   description = "프로젝트 이름 (리소스 이름에 사용)"
   type        = string
   default     = "{{cookiecutter.project_slug}}"
+
+  validation {
+    condition     = length(var.project_name) <= 18
+    error_message = "project_name must be 18 characters or less to avoid AWS resource name limits (ALB/TG 32-char limit)."
+  }
 }
 
 variable "environment" {
@@ -33,6 +38,13 @@ variable "db_password" {
   type        = string
   sensitive   = true
   default     = "change-this-password"  # terraform apply -var="db_password=실제비밀번호" 로 덮어쓰기
+}
+
+variable "django_secret_key" {
+  description = "Django SECRET_KEY"
+  type        = string
+  sensitive   = true
+  default     = "django-insecure-change-this-in-production"
 }
 
 variable "db_name" {
