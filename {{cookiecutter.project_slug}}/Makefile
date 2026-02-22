@@ -101,7 +101,10 @@ init:
 	gh secret set AWS_ACCESS_KEY_ID --body "$$AWS_ACCESS_KEY_ID" && \
 	gh secret set AWS_SECRET_ACCESS_KEY --body "$$AWS_SECRET_ACCESS_KEY" && \
 	gh secret set AWS_ACCOUNT_ID --body "$$AWS_ACCOUNT_ID" && \
-	gh secret set DB_PASSWORD --body "$$DB_PASS"
+	gh secret set DB_PASSWORD --body "$$DB_PASS" && \
+	DJANGO_SECRET_KEY=$$(python3 -c "import secrets; print(secrets.token_urlsafe(50))") && \
+	gh secret set DJANGO_SECRET_KEY --body "$$DJANGO_SECRET_KEY" && \
+	echo "  ✓ DJANGO_SECRET_KEY auto-generated"
 	@echo ""
 	@echo "✅ Secrets configured!"
 	@echo ""
@@ -173,7 +176,10 @@ setup-secrets:
 	gh secret set AWS_ACCESS_KEY_ID --body "$$AWS_ACCESS_KEY_ID" && \
 	gh secret set AWS_SECRET_ACCESS_KEY --body "$$AWS_SECRET_ACCESS_KEY" && \
 	gh secret set AWS_ACCOUNT_ID --body "$$AWS_ACCOUNT_ID" && \
-	gh secret set DB_PASSWORD --body "$$DB_PASS"
+	gh secret set DB_PASSWORD --body "$$DB_PASS" && \
+	DJANGO_SECRET_KEY=$$(python3 -c "import secrets; print(secrets.token_urlsafe(50))") && \
+	gh secret set DJANGO_SECRET_KEY --body "$$DJANGO_SECRET_KEY" && \
+	echo "  ✓ DJANGO_SECRET_KEY auto-generated"
 	@echo ""
 	@echo "✅ Secrets configured!"
 	@echo ""

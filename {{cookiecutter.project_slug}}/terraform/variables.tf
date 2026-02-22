@@ -35,6 +35,13 @@ variable "db_password" {
   default     = "change-this-password"  # terraform apply -var="db_password=실제비밀번호" 로 덮어쓰기
 }
 
+variable "django_secret_key" {
+  description = "Django SECRET_KEY"
+  type        = string
+  sensitive   = true
+  default     = "django-insecure-change-this-in-production"
+}
+
 variable "db_name" {
   description = "데이터베이스 이름"
   type        = string

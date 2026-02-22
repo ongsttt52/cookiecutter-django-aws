@@ -68,6 +68,14 @@ resource "aws_ecs_task_definition" "backend" {
         {
           name  = "AWS_DEFAULT_REGION"
           value = var.aws_region
+        },
+        {
+          name  = "ALLOWED_HOSTS"
+          value = aws_lb.main.dns_name
+        },
+        {
+          name  = "SECRET_KEY"
+          value = var.django_secret_key
         }
       ]
 
