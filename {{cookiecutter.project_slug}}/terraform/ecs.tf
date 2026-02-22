@@ -76,6 +76,10 @@ resource "aws_ecs_task_definition" "backend" {
         {
           name  = "SECRET_KEY"
           value = var.django_secret_key
+        },
+        {
+          name  = "CORS_ALLOWED_ORIGINS"
+          value = "http://${aws_lb.main.dns_name}"
         }
       ]
 
