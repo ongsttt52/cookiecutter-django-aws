@@ -9,7 +9,7 @@ resource "aws_vpc" "main" {
   enable_dns_support   = true
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-vpc-${var.environment}"
+    Name = "${local.project_name_normalized}-vpc-${var.environment}"
   }
 }
 
@@ -18,7 +18,7 @@ resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-igw-${var.environment}"
+    Name = "${local.project_name_normalized}-igw-${var.environment}"
   }
 }
 
@@ -32,7 +32,7 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-public-${count.index + 1}-${var.environment}"
+    Name = "${local.project_name_normalized}-public-${count.index + 1}-${var.environment}"
   }
 }
 
@@ -45,7 +45,7 @@ resource "aws_subnet" "private" {
   availability_zone = data.aws_availability_zones.available.names[count.index]
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-private-${count.index + 1}-${var.environment}"
+    Name = "${local.project_name_normalized}-private-${count.index + 1}-${var.environment}"
   }
 }
 
@@ -59,7 +59,7 @@ resource "aws_route_table" "public" {
   }
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-public-rt-${var.environment}"
+    Name = "${local.project_name_normalized}-public-rt-${var.environment}"
   }
 }
 

@@ -4,10 +4,10 @@
 
 # ECS 클러스터
 resource "aws_ecs_cluster" "main" {
-  name = "${replace(var.project_name, "_", "-")}-cluster-${var.environment}"
+  name = "${local.project_name_normalized}-cluster-${var.environment}"
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-cluster-${var.environment}"
+    Name = "${local.project_name_normalized}-cluster-${var.environment}"
   }
 }
 
@@ -17,17 +17,17 @@ resource "aws_ecs_cluster" "main" {
 
 # Backend CloudWatch 로그 그룹
 resource "aws_cloudwatch_log_group" "backend" {
-  name              = "/ecs/${replace(var.project_name, "_", "-")}-backend-${var.environment}"
+  name              = "/ecs/${local.project_name_normalized}-backend-${var.environment}"
   retention_in_days = var.environment == "prod" ? 30 : 7
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-backend-logs-${var.environment}"
+    Name = "${local.project_name_normalized}-backend-logs-${var.environment}"
   }
 }
 
 # Backend Task Definition
 resource "aws_ecs_task_definition" "backend" {
-  family                   = "${replace(var.project_name, "_", "-")}-backend-${var.environment}"
+  family                   = "${local.project_name_normalized}-backend-${var.environment}"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.environment == "prod" ? "512" : "256"
@@ -97,13 +97,13 @@ resource "aws_ecs_task_definition" "backend" {
   ])
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-backend-task-${var.environment}"
+    Name = "${local.project_name_normalized}-backend-task-${var.environment}"
   }
 }
 
 # Backend Service
 resource "aws_ecs_service" "backend" {
-  name            = "${replace(var.project_name, "_", "-")}-backend-service-${var.environment}"
+  name            = "${local.project_name_normalized}-backend-service-${var.environment}"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.backend.arn
   desired_count   = var.environment == "prod" ? 2 : 1
@@ -126,7 +126,7 @@ resource "aws_ecs_service" "backend" {
   }
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-backend-service-${var.environment}"
+    Name = "${local.project_name_normalized}-backend-service-${var.environment}"
   }
 
   lifecycle {
@@ -141,17 +141,17 @@ resource "aws_ecs_service" "backend" {
 
 # Frontend CloudWatch 로그 그룹
 resource "aws_cloudwatch_log_group" "frontend" {
-  name              = "/ecs/${replace(var.project_name, "_", "-")}-frontend-${var.environment}"
+  name              = "/ecs/${local.project_name_normalized}-frontend-${var.environment}"
   retention_in_days = var.environment == "prod" ? 30 : 7
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-frontend-logs-${var.environment}"
+    Name = "${local.project_name_normalized}-frontend-logs-${var.environment}"
   }
 }
 
 # Frontend Task Definition
 resource "aws_ecs_task_definition" "frontend" {
-  family                   = "${replace(var.project_name, "_", "-")}-frontend-${var.environment}"
+  family                   = "${local.project_name_normalized}-frontend-${var.environment}"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "256"
@@ -193,13 +193,13 @@ resource "aws_ecs_task_definition" "frontend" {
   ])
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-frontend-task-${var.environment}"
+    Name = "${local.project_name_normalized}-frontend-task-${var.environment}"
   }
 }
 
 # Frontend Service
 resource "aws_ecs_service" "frontend" {
-  name            = "${replace(var.project_name, "_", "-")}-frontend-service-${var.environment}"
+  name            = "${local.project_name_normalized}-frontend-service-${var.environment}"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.frontend.arn
   desired_count   = 1
@@ -222,7 +222,7 @@ resource "aws_ecs_service" "frontend" {
   }
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-frontend-service-${var.environment}"
+    Name = "${local.project_name_normalized}-frontend-service-${var.environment}"
   }
 
   lifecycle {

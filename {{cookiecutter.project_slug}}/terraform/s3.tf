@@ -11,7 +11,7 @@ resource "aws_s3_bucket" "media" {
   force_destroy = var.environment == "prod" ? false : true
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-media-${var.environment}"
+    Name = "${local.project_name_normalized}-media-${var.environment}"
   }
 }
 

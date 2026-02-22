@@ -4,7 +4,7 @@
 
 # Backend ECR 리포지토리
 resource "aws_ecr_repository" "backend" {
-  name                 = "${replace(var.project_name, "_", "-")}-backend-${var.environment}"
+  name                 = "${local.project_name_normalized}-backend-${var.environment}"
   image_tag_mutability = "MUTABLE"  # 같은 태그 덮어쓰기 가능
   force_delete         = true       # terraform destroy 시 이미지 포함 삭제
 
@@ -14,7 +14,7 @@ resource "aws_ecr_repository" "backend" {
   }
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-backend-ecr-${var.environment}"
+    Name = "${local.project_name_normalized}-backend-ecr-${var.environment}"
   }
 }
 
@@ -43,7 +43,7 @@ resource "aws_ecr_lifecycle_policy" "backend" {
 {% if cookiecutter.use_frontend == "yes" %}
 # Frontend ECR 리포지토리
 resource "aws_ecr_repository" "frontend" {
-  name                 = "${replace(var.project_name, "_", "-")}-frontend-${var.environment}"
+  name                 = "${local.project_name_normalized}-frontend-${var.environment}"
   image_tag_mutability = "MUTABLE"
   force_delete         = true
 
@@ -52,7 +52,7 @@ resource "aws_ecr_repository" "frontend" {
   }
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-frontend-ecr-${var.environment}"
+    Name = "${local.project_name_normalized}-frontend-ecr-${var.environment}"
   }
 }
 

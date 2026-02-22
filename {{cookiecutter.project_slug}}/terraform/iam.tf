@@ -4,7 +4,7 @@
 
 # ECS Task Execution Role (ECS가 ECR에서 이미지 가져오고 로그 쓰기 위한 권한)
 resource "aws_iam_role" "ecs_execution_role" {
-  name = "${replace(var.project_name, "_", "-")}-ecs-execution-role-${var.environment}"
+  name = "${local.project_name_normalized}-ecs-execution-role-${var.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -20,7 +20,7 @@ resource "aws_iam_role" "ecs_execution_role" {
   })
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-ecs-execution-role-${var.environment}"
+    Name = "${local.project_name_normalized}-ecs-execution-role-${var.environment}"
   }
 }
 
@@ -32,7 +32,7 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
 
 # ECS Task Role (Django 앱이 S3에 접근하기 위한 권한)
 resource "aws_iam_role" "ecs_task_role" {
-  name = "${replace(var.project_name, "_", "-")}-ecs-task-role-${var.environment}"
+  name = "${local.project_name_normalized}-ecs-task-role-${var.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -48,13 +48,13 @@ resource "aws_iam_role" "ecs_task_role" {
   })
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-ecs-task-role-${var.environment}"
+    Name = "${local.project_name_normalized}-ecs-task-role-${var.environment}"
   }
 }
 
 # S3 접근 정책 (Presigned URL 생성 위한)
 resource "aws_iam_role_policy" "ecs_task_s3_policy" {
-  name = "${replace(var.project_name, "_", "-")}-ecs-s3-policy-${var.environment}"
+  name = "${local.project_name_normalized}-ecs-s3-policy-${var.environment}"
   role = aws_iam_role.ecs_task_role.id
 
   policy = jsonencode({

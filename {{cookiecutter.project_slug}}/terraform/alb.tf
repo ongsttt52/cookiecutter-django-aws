@@ -11,7 +11,7 @@ resource "aws_lb" "main" {
   subnets            = aws_subnet.public[*].id
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-alb-${var.environment}"
+    Name = "${local.project_name_normalized}-alb-${var.environment}"
   }
 }
 
@@ -37,7 +37,7 @@ resource "aws_lb_target_group" "backend" {
   }
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-be-tg-${var.environment}"
+    Name = "${local.project_name_normalized}-be-tg-${var.environment}"
   }
 }
 
@@ -63,7 +63,7 @@ resource "aws_lb_target_group" "frontend" {
   }
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-fe-tg-${var.environment}"
+    Name = "${local.project_name_normalized}-fe-tg-${var.environment}"
   }
 }
 {% endif %}

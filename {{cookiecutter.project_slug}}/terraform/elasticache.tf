@@ -8,7 +8,7 @@ resource "aws_elasticache_subnet_group" "main" {
   subnet_ids = aws_subnet.private[*].id
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-redis-subnet-${var.environment}"
+    Name = "${local.project_name_normalized}-redis-subnet-${var.environment}"
   }
 }
 
@@ -35,6 +35,6 @@ resource "aws_elasticache_cluster" "main" {
   parameter_group_name = "default.redis7"
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-redis-${var.environment}"
+    Name = "${local.project_name_normalized}-redis-${var.environment}"
   }
 }

@@ -4,7 +4,7 @@
 
 # ALB 보안 그룹 (외부에서 HTTP/HTTPS 접근 가능)
 resource "aws_security_group" "alb" {
-  name        = "${replace(var.project_name, "_", "-")}-alb-sg-${var.environment}"
+  name        = "${local.project_name_normalized}-alb-sg-${var.environment}"
   description = "Security group for Application Load Balancer"
   vpc_id      = aws_vpc.main.id
 
@@ -33,13 +33,13 @@ resource "aws_security_group" "alb" {
   }
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-alb-sg-${var.environment}"
+    Name = "${local.project_name_normalized}-alb-sg-${var.environment}"
   }
 }
 
 # ECS 보안 그룹 (ALB에서만 접근 가능)
 resource "aws_security_group" "ecs" {
-  name        = "${replace(var.project_name, "_", "-")}-ecs-sg-${var.environment}"
+  name        = "${local.project_name_normalized}-ecs-sg-${var.environment}"
   description = "Security group for ECS tasks"
   vpc_id      = aws_vpc.main.id
 
@@ -70,13 +70,13 @@ resource "aws_security_group" "ecs" {
   }
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-ecs-sg-${var.environment}"
+    Name = "${local.project_name_normalized}-ecs-sg-${var.environment}"
   }
 }
 
 # RDS 보안 그룹 (ECS에서만 접근 가능)
 resource "aws_security_group" "rds" {
-  name        = "${replace(var.project_name, "_", "-")}-rds-sg-${var.environment}"
+  name        = "${local.project_name_normalized}-rds-sg-${var.environment}"
   description = "Security group for RDS PostgreSQL"
   vpc_id      = aws_vpc.main.id
 
@@ -89,13 +89,13 @@ resource "aws_security_group" "rds" {
   }
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-rds-sg-${var.environment}"
+    Name = "${local.project_name_normalized}-rds-sg-${var.environment}"
   }
 }
 
 # Redis 보안 그룹 (ECS에서만 접근 가능)
 resource "aws_security_group" "redis" {
-  name        = "${replace(var.project_name, "_", "-")}-redis-sg-${var.environment}"
+  name        = "${local.project_name_normalized}-redis-sg-${var.environment}"
   description = "Security group for ElastiCache Redis"
   vpc_id      = aws_vpc.main.id
 
@@ -108,6 +108,6 @@ resource "aws_security_group" "redis" {
   }
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-redis-sg-${var.environment}"
+    Name = "${local.project_name_normalized}-redis-sg-${var.environment}"
   }
 }

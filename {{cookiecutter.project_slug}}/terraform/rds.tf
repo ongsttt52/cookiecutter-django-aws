@@ -8,7 +8,7 @@ resource "aws_db_subnet_group" "main" {
   subnet_ids = aws_subnet.private[*].id
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-db-subnet-${var.environment}"
+    Name = "${local.project_name_normalized}-db-subnet-${var.environment}"
   }
 }
 
@@ -42,10 +42,10 @@ resource "aws_db_instance" "main" {
 
   # 삭제 보호
   skip_final_snapshot       = var.environment == "prod" ? false : true  # demo/dev: 스냅샷 생략, prod: 생성
-  final_snapshot_identifier = var.environment == "prod" ? "${replace(var.project_name, "_", "-")}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}" : null
+  final_snapshot_identifier = var.environment == "prod" ? "${local.project_name_normalized}-final-snapshot-${formatdate("YYYY-MM-DD-hhmm", timestamp())}" : null
   deletion_protection       = var.environment == "prod" ? true : false  # prod: 삭제 방지
 
   tags = {
-    Name = "${replace(var.project_name, "_", "-")}-db-${var.environment}"
+    Name = "${local.project_name_normalized}-db-${var.environment}"
   }
 }
