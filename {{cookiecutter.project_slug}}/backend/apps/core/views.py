@@ -1,7 +1,11 @@
+import logging
+
 from django.db import connection
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+
+logger = logging.getLogger(__name__)
 
 
 @api_view(["GET"])
@@ -13,7 +17,8 @@ def health_check(request):
             cursor.execute("SELECT 1")
         return Response({"status": "healthy", "database": "connected"})
     except Exception as e:
+        logger.error("Health check failed: %s", e)
         return Response(
-            {"status": "unhealthy", "database": str(e)},
+            {"status": "unhealthy", "database": "disconnected"},
             status=503,
         )
