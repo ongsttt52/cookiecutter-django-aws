@@ -172,10 +172,6 @@ resource "aws_ecs_task_definition" "frontend" {
         {
           name  = "NODE_ENV"
           value = "production"
-        },
-        {
-          name  = "NEXT_PUBLIC_API_URL"
-          value = "http://${aws_lb.main.dns_name}"
         }
       ]
 
