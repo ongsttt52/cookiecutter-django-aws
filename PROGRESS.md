@@ -222,23 +222,92 @@ ALB (port 80)
 
 ---
 
+### Phase 6.5: post_gen_project.py 개선 (완료)
+
+**작업일**: 2026-02-22
+
+- [x] `use_celery=no`일 때 `backend/config/celery.py` 자동 삭제 로직 추가
+  - 기존에는 docstring만 있는 빈 파일이 남아있었음
+  - `remove_file()` 헬퍼 함수 추가
+
+### Phase 7: E2E 배포 테스트 (진행 중)
+
+**작업일**: 2026-02-22
+
+#### 1단계: Cookiecutter 렌더링 테스트 ✅
+
+- [x] 케이스 A (풀옵션: celery + websocket + frontend) 렌더링 성공
+- [x] 케이스 B (최소: backend only) 렌더링 성공
+- [x] `{{cookiecutter.*}}` 잔여 변수 없음 확인
+- [x] `{% %}` 잔여 조건문 없음 확인
+- [x] `use_frontend=no` → `frontend/` 삭제 확인
+- [x] `use_celery=no` → `celery.py` 삭제 확인
+- [x] `package-lock.json` 자동 생성 확인 (use_frontend=yes)
+- [x] docker-compose.yml 조건부 서비스 정상 렌더링
+- [x] Terraform 파일 조건부 리소스 정상 렌더링
+- [x] deploy.yml 조건부 job 정상 렌더링
+- [x] 프로젝트명 정규화 (`test_full` → `test-full`) 확인
+- [x] `local.project_name_normalized` 통일 확인 (인라인 replace 잔재 없음)
+
+#### 2단계: Docker Compose 로컬 테스트 ✅
+
+- [x] 케이스 A: 7개 컨테이너 전부 정상 구동 (db, redis, backend, celery_worker, celery_beat, websocket, frontend)
+- [x] 케이스 B: 2개 컨테이너 정상 구동 (db, backend)
+- [x] DB 마이그레이션 자동 실행 확인
+- [x] `/api/health/` → `{"status":"healthy","database":"connected"}`
+- [x] `/api/admin/login/` → HTTP 200
+- [x] `/api/docs/` (Swagger UI) → HTTP 200
+- [x] `localhost:3000` (Frontend) → HTTP 200 (케이스 A)
+- [x] Celery Worker ready 확인
+- [x] Celery Beat started 확인
+- [x] WebSocket (Daphne) listening on 8001 확인
+
+**참고**: 첫 실행 시 `uv sync` 패키지 설치로 Backend 시작에 30~40초 소요
+
+#### 3단계: Terraform 검증 (미진행)
+
+- [ ] `terraform init -backend=false` 성공
+- [ ] `terraform validate` 성공
+- [ ] `terraform plan` 리소스 수 확인
+- [ ] `use_frontend=no`일 때 frontend 리소스 plan에 없는지 확인
+
+#### 4단계: AWS 실제 배포 테스트 (미진행)
+
+- [ ] `make init` → GitHub 레포 생성 + Secrets 설정
+- [ ] `create-infra.yml` → Terraform apply 성공
+- [ ] `deploy.yml` → Docker 빌드 + ECR push + ECS 배포 성공
+- [ ] ALB 라우팅 확인: `/api/health/`, `/api/admin/`, `/api/docs/`, `/`
+- [ ] `destroy.yml` → Terraform destroy 성공
+
+---
+
 ## 현재 작업 중 🚧
 
-(없음)
+Phase 7: E2E 배포 테스트 — 3단계(Terraform 검증)부터 진행 필요
 
 ---
 
 ## 다음 단계
 
-**우선순위 1: End-to-End 배포 테스트**
-- [ ] `cookiecutter` 실행 → `use_frontend: yes/no` 양쪽 테스트
-- [ ] `docker compose up` 로컬 테스트
+**우선순위 1: E2E 배포 테스트 완료 (3~4단계)**
 - [ ] `terraform validate` 성공 확인
 - [ ] AWS 배포 → ALB 라우팅 확인 (`/`, `/api/*`)
 
-**우선순위 3: 추가 기능 (선택)**
+**우선순위 2: S3 Presigned URL API 구현**
+- [ ] `backend/apps/files/` 앱 생성
+- [ ] Upload/Download presigned URL 엔드포인트
+- [ ] URL 라우팅 등록
+
+**우선순위 3: CI 코드 품질 단계 추가**
+- [ ] `deploy.yml`에 lint/test job 추가 (ruff check, black --check, pytest)
+- [ ] Health check 등 기본 테스트 코드 작성
+
+**우선순위 4: Superuser 자동 생성 스크립트**
+- [ ] `entrypoint.sh`에 환경변수 기반 superuser 생성 로직
+- [ ] `DJANGO_SUPERUSER_EMAIL`, `DJANGO_SUPERUSER_PASSWORD` 환경변수 활용
+
+**우선순위 5: 추가 기능 (선택)**
 - [ ] EC2 All-in-One 배포 옵션 추가
-- [ ] Superuser 자동 생성 스크립트
 - [ ] CloudWatch 로그 필터 설정
 
 ---

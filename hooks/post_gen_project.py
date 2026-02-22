@@ -15,6 +15,13 @@ def remove_directory(path: str) -> None:
         print(f"  Removed: {path}/")
 
 
+def remove_file(path: str) -> None:
+    """Remove a file if it exists."""
+    if os.path.exists(path):
+        os.remove(path)
+        print(f"  Removed: {path}")
+
+
 def generate_package_lock() -> None:
     """Generate package-lock.json for the frontend directory."""
     frontend_dir = os.path.join(os.getcwd(), "frontend")
@@ -34,6 +41,7 @@ def generate_package_lock() -> None:
 
 def main() -> None:
     use_frontend = "{{ cookiecutter.use_frontend }}"
+    use_celery = "{{ cookiecutter.use_celery }}"
 
     if use_frontend != "yes":
         print("use_frontend=no: Removing frontend/ directory...")
@@ -41,6 +49,10 @@ def main() -> None:
     else:
         print("use_frontend=yes: Generating package-lock.json...")
         generate_package_lock()
+
+    if use_celery != "yes":
+        print("use_celery=no: Removing celery config...")
+        remove_file(os.path.join("backend", "config", "celery.py"))
 
     print("Post-generation hook completed.")
 
