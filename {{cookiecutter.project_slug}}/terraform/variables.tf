@@ -7,6 +7,11 @@ variable "project_name" {
   description = "프로젝트 이름 (리소스 이름에 사용)"
   type        = string
   default     = "{{cookiecutter.project_slug}}"
+
+  validation {
+    condition     = length(var.project_name) <= 18
+    error_message = "project_name must be 18 characters or less to avoid AWS resource name limits (ALB/TG 32-char limit)."
+  }
 }
 
 variable "environment" {
