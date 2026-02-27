@@ -21,7 +21,8 @@ Django REST API project with AWS deployment
 {% if cookiecutter.use_celery == "yes" -%}
 - **Task Queue**: Celery
 {% endif -%}
-- **Deployment**: AWS {{cookiecutter.aws_deployment}}
+{% if cookiecutter.aws_deployment == "ecs-fargate" %}- **Deployment**: AWS ECS Fargate (production-grade){% endif %}
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}- **Deployment**: AWS EC2 All-in-One (cost-effective demo, ~$15/month){% endif %}
 {% if cookiecutter.use_terraform == "yes" -%}
 - **Infrastructure**: Terraform
 {% endif -%}
@@ -164,6 +165,30 @@ terraform apply
 ### Application Deployment
 
 Deployment is automated via {{cookiecutter.ci_cd_platform}} on push to main branch.
+
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}
+### EC2 All-in-One Architecture
+
+All services run on a single EC2 instance via Docker Compose:
+
+```
+EC2 Instance (t3.small, ~$15/month)
+├── Docker Compose
+│   ├── PostgreSQL (container)
+│   ├── Redis (container)
+│   ├── Django + Gunicorn (container, port 80)
+│   ├── Celery Worker (optional)
+│   └── Next.js Frontend (optional)
+└── S3 (external, for media files)
+```
+
+**Cost comparison:**
+
+| Mode | Monthly Cost | Best For |
+|------|-------------|----------|
+| EC2 All-in-One | ~$15 | Client demos, prototypes |
+| ECS Fargate | ~$60 | Production, scalability |
+{% endif %}
 {% endif -%}
 
 ## Environment Variables
