@@ -54,7 +54,10 @@ jobs:
             -var="project_name={% endraw %}{{cookiecutter.project_slug}}{% raw %}" \
             -var="environment=demo" \
             -var="db_password=${{ secrets.DB_PASSWORD }}" \
-            -var="django_secret_key=${{ secrets.DJANGO_SECRET_KEY }}" \
+            -var="django_secret_key=${{ secrets.DJANGO_SECRET_KEY }}" \{% endraw %}
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
+            -var="ec2_public_key=${{ secrets.EC2_SSH_PUBLIC_KEY }}" \{% endraw %}
+{% endif %}{% raw %}
             -auto-approve
 
           echo "✅ Infrastructure destroyed successfully!"
@@ -67,12 +70,19 @@ jobs:
           echo ""
           echo "Destroyed resources:"
           echo "  - VPC and networking"
+          echo "  - S3 Bucket (if empty)"{% endraw %}
+{% if cookiecutter.aws_deployment == "ecs-fargate" %}{% raw %}
           echo "  - RDS PostgreSQL"
           echo "  - ElastiCache Redis"
           echo "  - ECS Cluster and Services"
           echo "  - ECR Repository"
-          echo "  - Application Load Balancer"
-          echo "  - S3 Bucket (if empty)"
+          echo "  - Application Load Balancer"{% endraw %}
+{% endif %}
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
+          echo "  - EC2 Instance and Elastic IP"
+          echo "  - EC2 Key Pair"
+          echo "  - IAM Instance Profile"{% endraw %}
+{% endif %}{% raw %}
           echo ""
           echo "Note: You may need to manually delete:"
           echo "  - S3 bucket if it contains files"

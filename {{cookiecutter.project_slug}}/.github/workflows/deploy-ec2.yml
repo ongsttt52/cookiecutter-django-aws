@@ -1,0 +1,123 @@
+{% raw %}name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: {% endraw %}{{cookiecutter.aws_region}}{% raw %}
+  PROJECT_NAME: {% endraw %}{{ cookiecutter.project_slug | replace('_', '-') }}{% raw %}
+
+jobs:
+  deploy:
+    name: Deploy to EC2 via SSH
+    runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get EC2 Public IP
+        id: ec2
+        run: |
+          EC2_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=${{ env.PROJECT_NAME }}-ec2-demo" \
+                      "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].PublicIpAddress' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+
+          if [ "$EC2_IP" == "None" ] || [ -z "$EC2_IP" ]; then
+            echo "EC2 instance not found!"
+            echo "Please run 'Create AWS Infrastructure' workflow first."
+            exit 1
+          fi
+
+          echo "ip=$EC2_IP" >> $GITHUB_OUTPUT
+          echo "EC2 IP: $EC2_IP"
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ steps.ec2.outputs.ip }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            APP_DIR="/opt/app"
+            REPO_URL="https://github.com/${{ github.repository }}.git"
+
+            echo ">>> Deploying to EC2..."
+
+            # Clone or pull
+            if [ -d "$APP_DIR/.git" ]; then
+              echo ">>> Pulling latest code..."
+              cd "$APP_DIR"
+              sudo git fetch origin main
+              sudo git reset --hard origin/main
+            else
+              echo ">>> Cloning repository..."
+              sudo git clone "$REPO_URL" "$APP_DIR"
+              cd "$APP_DIR"
+            fi
+
+            # Build and deploy
+            echo ">>> Building and starting containers..."
+            cd "$APP_DIR"
+            sudo docker compose -f docker-compose.prod.yml build --no-cache
+            sudo docker compose -f docker-compose.prod.yml up -d
+
+            # Run migrations
+            echo ">>> Running migrations..."
+            sleep 10
+            sudo docker compose -f docker-compose.prod.yml exec -T backend uv run python manage.py migrate --no-input
+
+            # Collect static files
+            sudo docker compose -f docker-compose.prod.yml exec -T backend uv run python manage.py collectstatic --no-input
+
+            echo ">>> Deployment complete!"
+
+      - name: Health check
+        run: |
+          APP_URL="http://${{ steps.ec2.outputs.ip }}"
+          MAX_ATTEMPTS=10
+          ATTEMPT=1
+
+          echo "Health check for $APP_URL/api/health/"
+
+          sleep 15
+
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS..."
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/api/health/" || echo "000")
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Health check passed! (HTTP $HTTP_CODE)"
+              exit 0
+            fi
+
+            echo "HTTP $HTTP_CODE, retrying in 10s..."
+            sleep 10
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          echo "Health check failed after $MAX_ATTEMPTS attempts"
+          exit 1
+
+      - name: Deployment summary
+        run: |
+          echo "Deployment completed!"
+          echo ""
+          echo "App URL: http://${{ steps.ec2.outputs.ip }}"
+          echo "SSH: ssh -i ~/.ssh/${{ env.PROJECT_NAME }}-ec2-key ec2-user@${{ steps.ec2.outputs.ip }}"
+{% endraw %}

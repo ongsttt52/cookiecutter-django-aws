@@ -41,7 +41,10 @@ jobs:
             -var="project_name={% endraw %}{{cookiecutter.project_slug}}{% raw %}" \
             -var="environment=demo" \
             -var="db_password=${{ secrets.DB_PASSWORD }}" \
-            -var="django_secret_key=${{ secrets.DJANGO_SECRET_KEY }}" \
+            -var="django_secret_key=${{ secrets.DJANGO_SECRET_KEY }}" \{% endraw %}
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
+            -var="ec2_public_key=${{ secrets.EC2_SSH_PUBLIC_KEY }}" \{% endraw %}
+{% endif %}{% raw %}
             -out=tfplan
 
       - name: Terraform Apply
@@ -52,22 +55,41 @@ jobs:
         id: output
         working-directory: terraform
         run: |
-          ECR_URL=$(terraform output -raw ecr_backend_url)
           APP_URL=$(terraform output -raw app_url)
+          echo "app_url=$APP_URL" >> $GITHUB_OUTPUT{% endraw %}
+{% if cookiecutter.aws_deployment == "ecs-fargate" %}{% raw %}
+          ECR_URL=$(terraform output -raw ecr_backend_url)
           echo "ecr_url=$ECR_URL" >> $GITHUB_OUTPUT
-          echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
-          echo "✅ Infrastructure created successfully!"
-          echo "📦 ECR URL: $ECR_URL"
+          echo "📦 ECR URL: $ECR_URL"{% endraw %}
+{% endif %}
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
+          EC2_IP=$(terraform output -raw ec2_public_ip)
+          echo "ec2_ip=$EC2_IP" >> $GITHUB_OUTPUT
+          echo "🖥️  EC2 IP: $EC2_IP"{% endraw %}
+{% endif %}{% raw %}
           echo "🌐 App URL: $APP_URL"
+          echo "✅ Infrastructure created successfully!"
 
       - name: Summary
-        run: |
-          echo "🎉 AWS Infrastructure created successfully!"
+        run: |{% endraw %}
+{% if cookiecutter.aws_deployment == "ecs-fargate" %}{% raw %}
+          echo "🎉 AWS Infrastructure (ECS Fargate) created!"
           echo ""
           echo "📦 ECR Repository: ${{ steps.output.outputs.ecr_url }}"
           echo "🌐 Application URL: ${{ steps.output.outputs.app_url }}"
           echo ""
           echo "Next steps:"
           echo "1. Run 'Deploy Application' workflow to deploy your app"
-          echo "2. Access your app at: ${{ steps.output.outputs.app_url }}"
-{% endraw %}
+          echo "2. Access your app at: ${{ steps.output.outputs.app_url }}"{% endraw %}
+{% endif %}
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
+          echo "🎉 AWS Infrastructure (EC2 All-in-One) created!"
+          echo ""
+          echo "🖥️  EC2 IP: ${{ steps.output.outputs.ec2_ip }}"
+          echo "🌐 Application URL: ${{ steps.output.outputs.app_url }}"
+          echo ""
+          echo "Next steps:"
+          echo "1. Push to main branch to trigger deployment"
+          echo "2. Access your app at: ${{ steps.output.outputs.app_url }}"{% endraw %}
+{% endif %}
+{% raw %}{% endraw %}
