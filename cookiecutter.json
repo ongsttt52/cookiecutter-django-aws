@@ -11,7 +11,7 @@
   "use_frontend": ["yes", "no"],
 
   "aws_region": "ap-northeast-2",
-  "aws_deployment": "ecs-fargate",
+  "aws_deployment": ["ecs-fargate", "ec2-all-in-one"],
 
   "ci_cd_platform": "github-actions",
   "github_runner": ["ubuntu-latest", "self-hosted"],

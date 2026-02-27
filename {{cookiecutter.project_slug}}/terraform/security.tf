@@ -1,3 +1,4 @@
+{% if cookiecutter.aws_deployment == "ecs-fargate" %}
 # ==============================================================================
 # 보안 그룹 (방화벽 규칙)
 # ==============================================================================
@@ -111,3 +112,4 @@ resource "aws_security_group" "redis" {
     Name = "${local.project_name_normalized}-redis-sg-${var.environment}"
   }
 }
+{% endif %}

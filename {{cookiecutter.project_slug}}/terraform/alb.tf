@@ -1,3 +1,4 @@
+{% if cookiecutter.aws_deployment == "ecs-fargate" %}
 # ==============================================================================
 # Application Load Balancer (트래픽 분산)
 # ==============================================================================
@@ -106,4 +107,5 @@ resource "aws_lb_listener_rule" "api" {
     }
   }
 }
+{% endif %}
 {% endif %}

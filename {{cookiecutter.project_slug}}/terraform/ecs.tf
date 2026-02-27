@@ -1,3 +1,4 @@
+{% if cookiecutter.aws_deployment == "ecs-fargate" %}
 # ==============================================================================
 # ECS (컨테이너 실행 환경)
 # ==============================================================================
@@ -229,4 +230,5 @@ resource "aws_ecs_service" "frontend" {
     ignore_changes = [desired_count]
   }
 }
+{% endif %}
 {% endif %}
