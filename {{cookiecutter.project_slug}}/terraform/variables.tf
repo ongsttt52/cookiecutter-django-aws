@@ -53,15 +53,29 @@ variable "db_name" {
   default     = "{{cookiecutter.project_slug}}"
 }
 
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}
+# EC2 SSH Public Key
+variable "ec2_public_key" {
+  description = "SSH public key for EC2 access"
+  type        = string
+}
+{% endif %}
+
 # 인스턴스 크기 (환경별 자동 선택)
 locals {
   # 프로젝트 이름 정규화 (언더스코어를 하이픈으로 변경)
   project_name_normalized = replace(var.project_name, "_", "-")
 
+{% if cookiecutter.aws_deployment == "ecs-fargate" %}
   # dev/demo: 작고 저렴 (빠른 테스트), prod: 크고 안정적
   db_instance_class = var.environment == "prod" ? "db.t3.small" : "db.t3.micro"
   redis_node_type   = var.environment == "prod" ? "cache.t3.small" : "cache.t3.micro"
   ecs_instance_type = var.environment == "prod" ? "t3.medium" : "t3.small"
+{% endif %}
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}
+  # EC2 instance type: demo/dev=t3.small (~$15/月), prod=t3.medium
+  ec2_instance_type = var.environment == "prod" ? "t3.medium" : "t3.small"
+{% endif %}
 
   # 공통 태그
   common_tags = {
