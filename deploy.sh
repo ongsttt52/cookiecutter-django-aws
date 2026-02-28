@@ -460,12 +460,17 @@ create_infrastructure() {
 deploy_application() {
   log_step "7" "Deploying Application"
 
-  if ! trigger_and_wait_workflow "Deploy Application" 600 "$REPO_FULL_NAME"; then
-    if ! trigger_and_wait_workflow "Deploy to EC2" 600 "$REPO_FULL_NAME"; then
-      log_warn "Deployment workflow failed or not found."
-      log_info "Try pushing to main branch to trigger auto-deployment:"
-      log_info "  cd $PROJECT_DIR && git push origin main"
-    fi
+  local workflow_name
+  if [ "$AWS_DEPLOYMENT" = "ec2-all-in-one" ]; then
+    workflow_name="Deploy to EC2"
+  else
+    workflow_name="Deploy Application"
+  fi
+
+  if ! trigger_and_wait_workflow "$workflow_name" 600 "$REPO_FULL_NAME"; then
+    log_warn "Deployment workflow '$workflow_name' failed."
+    log_info "Try pushing to main branch to trigger auto-deployment:"
+    log_info "  cd $PROJECT_DIR && git push origin main"
   fi
 }
 
@@ -477,20 +482,36 @@ verify_endpoint() {
 
   cd "$PROJECT_DIR"
 
-  # Get app URL from Terraform
   local app_url=""
+  local project_name_normalized="${PROJECT_SLUG//_/-}"
 
-  if [ -d terraform ]; then
-    cd terraform
-    if terraform init -backend=false >/dev/null 2>&1; then
-      # Try to get output (may fail if state is remote-only)
-      app_url=$(terraform output -raw app_url 2>/dev/null || echo "")
+  if [ "$AWS_DEPLOYMENT" = "ec2-all-in-one" ]; then
+    # EC2: Get public IP via AWS CLI
+    local ec2_ip
+    ec2_ip=$(aws ec2 describe-instances \
+      --filters "Name=tag:Name,Values=${project_name_normalized}-ec2-demo" \
+                "Name=instance-state-name,Values=running" \
+      --query 'Reservations[0].Instances[0].PublicIpAddress' \
+      --output text \
+      --region "$AWS_REGION" 2>/dev/null || echo "")
+    if [ -n "$ec2_ip" ] && [ "$ec2_ip" != "None" ]; then
+      app_url="http://$ec2_ip"
     fi
-    cd ..
+  else
+    # ECS: Get ALB DNS via AWS CLI
+    local alb_dns
+    alb_dns=$(aws elbv2 describe-load-balancers \
+      --names "${project_name_normalized}-alb-demo" \
+      --query 'LoadBalancers[0].DNSName' \
+      --output text \
+      --region "$AWS_REGION" 2>/dev/null || echo "")
+    if [ -n "$alb_dns" ] && [ "$alb_dns" != "None" ]; then
+      app_url="http://$alb_dns"
+    fi
   fi
 
   if [ -z "$app_url" ]; then
-    log_warn "Could not auto-detect app URL from Terraform outputs."
+    log_warn "Could not auto-detect app URL via AWS CLI."
     log_info "Check GitHub Actions workflow logs for the deployment URL."
     return
   fi
