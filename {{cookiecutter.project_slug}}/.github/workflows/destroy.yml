@@ -7,6 +7,10 @@ on:
         description: 'Type "destroy" to confirm'
         required: true
         default: ''
+      delete_state_bucket:
+        description: 'Also delete Terraform state bucket? (yes/no)'
+        required: false
+        default: 'no'
 
 env:
   AWS_REGION: {% endraw %}{{cookiecutter.aws_region}}{% raw %}
@@ -62,6 +66,61 @@ jobs:
 
           echo "✅ Infrastructure destroyed successfully!"
 
+      - name: Delete Terraform State Bucket
+        if: github.event.inputs.delete_state_bucket == 'yes'
+        env:
+          TF_STATE_BUCKET: {% endraw %}{{cookiecutter.terraform_state_bucket}}{% raw %}
+        run: |
+          echo "🗑️  Deleting Terraform state bucket: $TF_STATE_BUCKET"
+
+          if ! aws s3api head-bucket --bucket "$TF_STATE_BUCKET" 2>/dev/null; then
+            echo "⚠️  State bucket not found, skipping"
+            exit 0
+          fi
+
+          echo "  Removing all object versions..."
+          aws s3api list-object-versions \
+            --bucket "$TF_STATE_BUCKET" \
+            --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
+            --output json | \
+          python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          objects = data.get('Objects') or []
+          if objects:
+              for i in range(0, len(objects), 1000):
+                  batch = objects[i:i+1000]
+                  delete_payload = {'Objects': batch, 'Quiet': True}
+                  print(json.dumps(delete_payload))
+          " | while read -r payload; do
+            aws s3api delete-objects \
+              --bucket "$TF_STATE_BUCKET" \
+              --delete "$payload" 2>/dev/null || true
+          done
+
+          echo "  Removing all delete markers..."
+          aws s3api list-object-versions \
+            --bucket "$TF_STATE_BUCKET" \
+            --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' \
+            --output json | \
+          python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          objects = data.get('Objects') or []
+          if objects:
+              for i in range(0, len(objects), 1000):
+                  batch = objects[i:i+1000]
+                  delete_payload = {'Objects': batch, 'Quiet': True}
+                  print(json.dumps(delete_payload))
+          " | while read -r payload; do
+            aws s3api delete-objects \
+              --bucket "$TF_STATE_BUCKET" \
+              --delete "$payload" 2>/dev/null || true
+          done
+
+          aws s3api delete-bucket --bucket "$TF_STATE_BUCKET"
+          echo "✅ State bucket deleted"
+
       - name: Summary
         run: |
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -83,6 +142,13 @@ jobs:
           echo "  - EC2 Key Pair"
           echo "  - IAM Instance Profile"{% endraw %}
 {% endif %}{% raw %}
+          echo ""
+          if [ "${{ github.event.inputs.delete_state_bucket }}" = "yes" ]; then
+            echo "  - Terraform state bucket: {% endraw %}{{cookiecutter.terraform_state_bucket}}{% raw %} (DELETED)"
+          else
+            echo "  ℹ️  Terraform state bucket preserved: {% endraw %}{{cookiecutter.terraform_state_bucket}}{% raw %}"
+            echo "     To delete it, re-run this workflow with 'delete_state_bucket: yes'"
+          fi
           echo ""
           echo "Note: You may need to manually delete:"
           echo "  - S3 bucket if it contains files"

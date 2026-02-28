@@ -354,6 +354,49 @@ github_init() {
 }
 
 # ==============================================================================
+# Step 5.5: Ensure Terraform State Bucket Exists
+# ==============================================================================
+ensure_state_bucket() {
+  local bucket_name
+  bucket_name="$(echo "$PROJECT_SLUG" | tr '_' '-')-tf-state"
+  TF_STATE_BUCKET="$bucket_name"
+
+  log_info "Checking Terraform state bucket: $bucket_name"
+
+  if aws s3api head-bucket --bucket "$bucket_name" 2>/dev/null; then
+    log_success "State bucket already exists"
+    return
+  fi
+
+  log_info "Creating state bucket: $bucket_name"
+
+  if [ "$AWS_REGION" = "us-east-1" ]; then
+    aws s3api create-bucket \
+      --bucket "$bucket_name"
+  else
+    aws s3api create-bucket \
+      --bucket "$bucket_name" \
+      --create-bucket-configuration LocationConstraint="$AWS_REGION"
+  fi
+
+  aws s3api put-bucket-versioning \
+    --bucket "$bucket_name" \
+    --versioning-configuration Status=Enabled
+
+  aws s3api put-public-access-block \
+    --bucket "$bucket_name" \
+    --public-access-block-configuration \
+      BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+
+  aws s3api put-bucket-encryption \
+    --bucket "$bucket_name" \
+    --server-side-encryption-configuration \
+      '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+
+  log_success "State bucket created with versioning, encryption, and public access block"
+}
+
+# ==============================================================================
 # Step 6: Trigger Infrastructure Creation
 # ==============================================================================
 trigger_and_wait_workflow() {
@@ -409,6 +452,8 @@ trigger_and_wait_workflow() {
 
 create_infrastructure() {
   log_step "6" "Creating AWS Infrastructure"
+
+  ensure_state_bucket
 
   if ! trigger_and_wait_workflow "Create AWS Infrastructure" 900 "$REPO_FULL_NAME"; then
     log_error "Infrastructure creation failed."
@@ -504,6 +549,11 @@ show_summary() {
     echo "  App URL:     $APP_URL"
     echo "  API Health:  $APP_URL/api/health/"
     echo "  API Admin:   $APP_URL/api/admin/"
+  fi
+
+  if [ -n "${TF_STATE_BUCKET:-}" ]; then
+    echo ""
+    echo "  TF State:    s3://$TF_STATE_BUCKET"
   fi
 
   echo ""
