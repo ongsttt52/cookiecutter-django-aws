@@ -333,6 +333,47 @@ EC2 Instance (t3.small, ~$15/month)
 | EC2 All-in-One | ~$15 | 클라이언트 데모, 프로토타입 |
 | ECS Fargate | ~$60 | 프로덕션, 확장성 |
 
+### Phase 8.1: 코드 리뷰 수정 (완료)
+
+**작업일**: 2026-02-28
+
+코드 리뷰에서 발견된 CRITICAL 8건, HIGH 6건, MEDIUM 4건 수정 완료.
+
+#### CRITICAL 수정
+- [x] C1: deploy.sh sed → python3 str.replace() (특수문자 안전) + .env chmod 600
+- [x] C2: ssh-keygen 후 chmod 600/644 명시
+- [x] C3: gh secret set --body → stdin 파이프 (프로세스 인자 노출 방지)
+- [x] C4: docker-compose.prod.yml POSTGRES_PASSWORD fallback 'postgres' → :?must be set
+- [x] C5: docker-compose.prod.yml 컨테이너 리소스 제한 추가 (CPU/Memory)
+- [x] C6: post_gen_project.py ECS 모드에서 ec2*.tf 삭제 누락 수정
+- [x] C7: post_gen_project.py EC2 모드에서 ecs/ecr/alb 등 .tf 삭제 누락 수정
+- [x] C8: deploy-ec2.yml migrate/collectstatic에 || exit 1 추가
+
+#### HIGH 수정
+- [x] H1: deploy.sh EXIT 트랩 추가 (실패 시 정리 안내)
+- [x] H2: verify_endpoint terraform output → AWS CLI 직접 조회로 변경
+- [x] H3: PROJECT_SLUG 유효성 검증 (^[a-z][a-z0-9_]*$, 최대 18자)
+- [x] H4: ec2_security.tf SSH cidr_blocks → var.ssh_allowed_cidrs 변수화
+- [x] H5: user-data.sh .env 작성 후 chmod 600
+- [x] H6: ec2_iam.tf s3:DeleteObject 제거 (최소 권한 원칙)
+
+#### MEDIUM 수정
+- [x] M4: deploy.sh 이중 워크플로우 → AWS_DEPLOYMENT 기반 분기
+- [x] M7: deploy-ec2.yml concurrency group 추가
+- [x] M10: user-data.sh Docker Compose 버전 GitHub API 동적 조회 (fallback 유지)
+- [x] M11: user-data.sh systemd 서비스 등록 (리부팅 시 자동 시작)
+- [x] M12: ec2.tf EBS volume_size 30GB → 50GB
+
+#### 미적용 (의도적 제외)
+- M1 (hardcoded sleep): health check 루프가 이미 보완
+- M2 (run_id race): sleep 10 후 조회가 실용적으로 충분
+- M3 (hardcoded timeouts): 상수 추출의 이득이 적음
+- M5, M6: 의도된 설계이며 workflow_dispatch로 보완 가능
+- M8 (nginx): 범위가 크고 별도 Phase로 분리 권장
+- M9 (Redis persistence): 캐시/브로커 용도라 영속성 불필요
+- M13 (Makefile): DX 변경이 커서 별도 리팩토링 권장
+- L1~L5: 낮은 우선순위
+
 ---
 
 ## 다음 단계
