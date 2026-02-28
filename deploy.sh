@@ -16,6 +16,26 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NO_INPUT=false
 SKIP_LOCAL_TEST=false
+PROJECT_DIR=""
+
+# Cleanup trap — 실패 시 안내 메시지 출력
+cleanup() {
+  local exit_code=$?
+  if [ $exit_code -ne 0 ]; then
+    echo ""
+    log_error "Script failed (exit code: $exit_code)"
+    if [ -n "$PROJECT_DIR" ] && [ -d "$PROJECT_DIR" ]; then
+      echo ""
+      log_info "Partially created project at: $PROJECT_DIR"
+      log_info "To clean up manually:"
+      echo "  rm -rf $PROJECT_DIR"
+      if [ -n "${REPO_FULL_NAME:-}" ]; then
+        echo "  gh repo delete $REPO_FULL_NAME --yes"
+      fi
+    fi
+  fi
+}
+trap cleanup EXIT
 
 # Parse arguments
 for arg in "$@"; do
@@ -153,6 +173,18 @@ collect_inputs() {
   # Derive project slug
   PROJECT_SLUG=$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '_' | tr '-' '_')
 
+  # Validate project slug (lowercase, starts with letter, max 18 chars)
+  if ! echo "$PROJECT_SLUG" | grep -qE '^[a-z][a-z0-9_]*$'; then
+    log_error "Invalid project name: '$PROJECT_SLUG'"
+    log_error "Must start with a letter and contain only lowercase letters, digits, underscores."
+    exit 1
+  fi
+  if [ ${#PROJECT_SLUG} -gt 18 ]; then
+    log_error "Project slug '$PROJECT_SLUG' is too long (${#PROJECT_SLUG} chars, max 18)."
+    log_error "AWS resource names (ALB/TG) have a 32-char limit including suffixes."
+    exit 1
+  fi
+
   echo ""
   log_info "Configuration summary:"
   echo "  Project:    $PROJECT_NAME ($PROJECT_SLUG)"
@@ -218,14 +250,16 @@ setup_env() {
   aws_secret=$(aws configure get aws_secret_access_key 2>/dev/null || echo "")
 
   if [ -n "$aws_key" ] && [ -n "$aws_secret" ]; then
-    # Replace placeholder values (use | delimiter to avoid conflicts with / in keys)
-    if [[ "$(uname)" == "Darwin" ]]; then
-      sed -i '' "s|your-aws-access-key-id|$aws_key|" .env
-      sed -i '' "s|your-aws-secret-access-key|$aws_secret|" .env
-    else
-      sed -i "s|your-aws-access-key-id|$aws_key|" .env
-      sed -i "s|your-aws-secret-access-key|$aws_secret|" .env
-    fi
+    # Replace placeholder values using python3 str.replace() (safe for special characters)
+    python3 -c "
+import pathlib
+p = pathlib.Path('.env')
+content = p.read_text()
+content = content.replace('your-aws-access-key-id', '''$aws_key''')
+content = content.replace('your-aws-secret-access-key', '''$aws_secret''')
+p.write_text(content)
+"
+    chmod 600 .env
     log_success "AWS credentials auto-configured from AWS CLI profile"
   else
     log_warn "Could not auto-detect AWS credentials."
@@ -328,21 +362,23 @@ github_init() {
   db_pass=$(python3 -c "import secrets; print(secrets.token_urlsafe(16))")
   django_key=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
 
-  gh secret set AWS_ACCESS_KEY_ID --body "$aws_key"
-  gh secret set AWS_SECRET_ACCESS_KEY --body "$aws_secret"
-  gh secret set AWS_ACCOUNT_ID --body "$aws_account_id"
-  gh secret set DB_PASSWORD --body "$db_pass"
-  gh secret set DJANGO_SECRET_KEY --body "$django_key"
+  echo "$aws_key" | gh secret set AWS_ACCESS_KEY_ID
+  echo "$aws_secret" | gh secret set AWS_SECRET_ACCESS_KEY
+  echo "$aws_account_id" | gh secret set AWS_ACCOUNT_ID
+  echo "$db_pass" | gh secret set DB_PASSWORD
+  echo "$django_key" | gh secret set DJANGO_SECRET_KEY
 
   # EC2 SSH key
   if [ "$AWS_DEPLOYMENT" = "ec2-all-in-one" ]; then
     local key_path="$HOME/.ssh/${PROJECT_SLUG///_/-}-ec2-key"
     if [ ! -f "$key_path" ]; then
       ssh-keygen -t ed25519 -f "$key_path" -N "" -C "$PROJECT_SLUG-ec2"
+      chmod 600 "$key_path"
+      chmod 644 "${key_path}.pub"
       log_info "SSH key generated: $key_path"
     fi
     gh secret set EC2_SSH_PRIVATE_KEY < "$key_path"
-    gh secret set EC2_SSH_PUBLIC_KEY --body "$(cat "${key_path}.pub")"
+    cat "${key_path}.pub" | gh secret set EC2_SSH_PUBLIC_KEY
     log_success "EC2 SSH keys saved to GitHub Secrets"
   fi
 
