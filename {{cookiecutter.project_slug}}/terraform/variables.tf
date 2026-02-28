@@ -59,6 +59,12 @@ variable "ec2_public_key" {
   description = "SSH public key for EC2 access"
   type        = string
 }
+
+variable "ssh_allowed_cidrs" {
+  description = "CIDR blocks allowed to SSH into the EC2 instance"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
 {% endif %}
 
 # 인스턴스 크기 (환경별 자동 선택)

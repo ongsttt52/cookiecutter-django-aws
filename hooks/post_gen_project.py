@@ -70,14 +70,24 @@ def main() -> None:
         remove_file("docker-compose.prod.yml")
         remove_file(os.path.join(workflows_dir, "deploy-ec2.yml"))
         remove_file(os.path.join("terraform", "user-data.sh"))
+        remove_file(os.path.join("terraform", "ec2.tf"))
+        remove_file(os.path.join("terraform", "ec2_iam.tf"))
+        remove_file(os.path.join("terraform", "ec2_security.tf"))
 
     elif aws_deployment == "ec2-all-in-one":
-        print("aws_deployment=ec2-all-in-one: Removing ECS deploy workflow...")
+        print("aws_deployment=ec2-all-in-one: Removing ECS files...")
         remove_file(os.path.join(workflows_dir, "deploy.yml"))
         rename_file(
             os.path.join(workflows_dir, "deploy-ec2.yml"),
             os.path.join(workflows_dir, "deploy.yml"),
         )
+        remove_file(os.path.join("terraform", "ecs.tf"))
+        remove_file(os.path.join("terraform", "ecr.tf"))
+        remove_file(os.path.join("terraform", "alb.tf"))
+        remove_file(os.path.join("terraform", "security.tf"))
+        remove_file(os.path.join("terraform", "elasticache.tf"))
+        remove_file(os.path.join("terraform", "rds.tf"))
+        remove_file(os.path.join("terraform", "iam.tf"))
 
     print("Post-generation hook completed.")
 
