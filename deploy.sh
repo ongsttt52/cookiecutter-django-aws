@@ -218,13 +218,13 @@ setup_env() {
   aws_secret=$(aws configure get aws_secret_access_key 2>/dev/null || echo "")
 
   if [ -n "$aws_key" ] && [ -n "$aws_secret" ]; then
-    # Replace placeholder values
+    # Replace placeholder values (use | delimiter to avoid conflicts with / in keys)
     if [[ "$(uname)" == "Darwin" ]]; then
-      sed -i '' "s/your-aws-access-key-id/$aws_key/" .env
-      sed -i '' "s/your-aws-secret-access-key/$aws_secret/" .env
+      sed -i '' "s|your-aws-access-key-id|$aws_key|" .env
+      sed -i '' "s|your-aws-secret-access-key|$aws_secret|" .env
     else
-      sed -i "s/your-aws-access-key-id/$aws_key/" .env
-      sed -i "s/your-aws-secret-access-key/$aws_secret/" .env
+      sed -i "s|your-aws-access-key-id|$aws_key|" .env
+      sed -i "s|your-aws-secret-access-key|$aws_secret|" .env
     fi
     log_success "AWS credentials auto-configured from AWS CLI profile"
   else
@@ -262,12 +262,20 @@ local_test() {
   log_info "Starting Docker Compose..."
   docker compose up -d --build 2>&1
 
-  log_info "Waiting for services to start (30s)..."
-  sleep 30
-
-  # Health check
-  local http_code
-  http_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/health/ 2>/dev/null || echo "000")
+  # Retry health check with timeout (ARM64 emulation can be slow)
+  local http_code="000"
+  local max_wait=90
+  local elapsed=0
+  log_info "Waiting for services to be healthy (up to ${max_wait}s)..."
+  while [ $elapsed -lt $max_wait ]; do
+    sleep 10
+    elapsed=$((elapsed + 10))
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/api/health/ 2>/dev/null || echo "000")
+    if [ "$http_code" = "200" ]; then
+      break
+    fi
+    log_info "  ...${elapsed}s elapsed (HTTP $http_code)"
+  done
 
   docker compose down 2>&1
 
