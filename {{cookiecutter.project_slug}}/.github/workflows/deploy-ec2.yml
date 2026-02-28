@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: true
+
 env:
   AWS_REGION: {% endraw %}{{cookiecutter.aws_region}}{% raw %}
   PROJECT_NAME: {% endraw %}{{ cookiecutter.project_slug | replace('_', '-') }}{% raw %}
@@ -80,10 +84,10 @@ jobs:
             # Run migrations
             echo ">>> Running migrations..."
             sleep 10
-            sudo docker compose -f docker-compose.prod.yml exec -T backend uv run python manage.py migrate --no-input
+            sudo docker compose -f docker-compose.prod.yml exec -T backend uv run python manage.py migrate --no-input || exit 1
 
             # Collect static files
-            sudo docker compose -f docker-compose.prod.yml exec -T backend uv run python manage.py collectstatic --no-input
+            sudo docker compose -f docker-compose.prod.yml exec -T backend uv run python manage.py collectstatic --no-input || exit 1
 
             echo ">>> Deployment complete!"
 

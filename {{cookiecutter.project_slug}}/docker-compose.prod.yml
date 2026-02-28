@@ -12,7 +12,12 @@ services:
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-{{cookiecutter.project_slug}}}
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -25,6 +30,11 @@ services:
     restart: always
     volumes:
       - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -44,8 +54,13 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-{{cookiecutter.project_slug}}}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-{{cookiecutter.project_slug}}}
       - REDIS_URL=redis://redis:6379/0
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 512M
     depends_on:
       db:
         condition: service_healthy
@@ -66,7 +81,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-{{cookiecutter.project_slug}}}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-{{cookiecutter.project_slug}}}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
     depends_on:
@@ -87,7 +102,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-{{cookiecutter.project_slug}}}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-{{cookiecutter.project_slug}}}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
     depends_on:
@@ -112,7 +127,7 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-{{cookiecutter.project_slug}}}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-{{cookiecutter.project_slug}}}
       - REDIS_URL=redis://redis:6379/0
       - CHANNEL_LAYERS_HOST=redis://redis:6379/1
     depends_on:
