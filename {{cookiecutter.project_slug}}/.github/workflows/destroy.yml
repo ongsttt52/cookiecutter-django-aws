@@ -7,6 +7,10 @@ on:
         description: 'Type "destroy" to confirm'
         required: true
         default: ''
+      delete_state_bucket:
+        description: 'Also delete Terraform state bucket? (yes/no)'
+        required: false
+        default: 'no'
 
 env:
   AWS_REGION: {% endraw %}{{cookiecutter.aws_region}}{% raw %}
@@ -54,10 +58,68 @@ jobs:
             -var="project_name={% endraw %}{{cookiecutter.project_slug}}{% raw %}" \
             -var="environment=demo" \
             -var="db_password=${{ secrets.DB_PASSWORD }}" \
-            -var="django_secret_key=${{ secrets.DJANGO_SECRET_KEY }}" \
+            -var="django_secret_key=${{ secrets.DJANGO_SECRET_KEY }}" \{% endraw %}
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
+            -var="ec2_public_key=${{ secrets.EC2_SSH_PUBLIC_KEY }}" \{% endraw %}
+{% endif %}{% raw %}
             -auto-approve
 
           echo "✅ Infrastructure destroyed successfully!"
+
+      - name: Delete Terraform State Bucket
+        if: github.event.inputs.delete_state_bucket == 'yes'
+        env:
+          TF_STATE_BUCKET: {% endraw %}{{cookiecutter.terraform_state_bucket}}{% raw %}
+        run: |
+          echo "🗑️  Deleting Terraform state bucket: $TF_STATE_BUCKET"
+
+          if ! aws s3api head-bucket --bucket "$TF_STATE_BUCKET" 2>/dev/null; then
+            echo "⚠️  State bucket not found, skipping"
+            exit 0
+          fi
+
+          echo "  Removing all object versions..."
+          aws s3api list-object-versions \
+            --bucket "$TF_STATE_BUCKET" \
+            --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
+            --output json | \
+          python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          objects = data.get('Objects') or []
+          if objects:
+              for i in range(0, len(objects), 1000):
+                  batch = objects[i:i+1000]
+                  delete_payload = {'Objects': batch, 'Quiet': True}
+                  print(json.dumps(delete_payload))
+          " | while read -r payload; do
+            aws s3api delete-objects \
+              --bucket "$TF_STATE_BUCKET" \
+              --delete "$payload" 2>/dev/null || true
+          done
+
+          echo "  Removing all delete markers..."
+          aws s3api list-object-versions \
+            --bucket "$TF_STATE_BUCKET" \
+            --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' \
+            --output json | \
+          python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          objects = data.get('Objects') or []
+          if objects:
+              for i in range(0, len(objects), 1000):
+                  batch = objects[i:i+1000]
+                  delete_payload = {'Objects': batch, 'Quiet': True}
+                  print(json.dumps(delete_payload))
+          " | while read -r payload; do
+            aws s3api delete-objects \
+              --bucket "$TF_STATE_BUCKET" \
+              --delete "$payload" 2>/dev/null || true
+          done
+
+          aws s3api delete-bucket --bucket "$TF_STATE_BUCKET"
+          echo "✅ State bucket deleted"
 
       - name: Summary
         run: |
@@ -67,12 +129,26 @@ jobs:
           echo ""
           echo "Destroyed resources:"
           echo "  - VPC and networking"
+          echo "  - S3 Bucket (if empty)"{% endraw %}
+{% if cookiecutter.aws_deployment == "ecs-fargate" %}{% raw %}
           echo "  - RDS PostgreSQL"
           echo "  - ElastiCache Redis"
           echo "  - ECS Cluster and Services"
           echo "  - ECR Repository"
-          echo "  - Application Load Balancer"
-          echo "  - S3 Bucket (if empty)"
+          echo "  - Application Load Balancer"{% endraw %}
+{% endif %}
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
+          echo "  - EC2 Instance and Elastic IP"
+          echo "  - EC2 Key Pair"
+          echo "  - IAM Instance Profile"{% endraw %}
+{% endif %}{% raw %}
+          echo ""
+          if [ "${{ github.event.inputs.delete_state_bucket }}" = "yes" ]; then
+            echo "  - Terraform state bucket: {% endraw %}{{cookiecutter.terraform_state_bucket}}{% raw %} (DELETED)"
+          else
+            echo "  ℹ️  Terraform state bucket preserved: {% endraw %}{{cookiecutter.terraform_state_bucket}}{% raw %}"
+            echo "     To delete it, re-run this workflow with 'delete_state_bucket: yes'"
+          fi
           echo ""
           echo "Note: You may need to manually delete:"
           echo "  - S3 bucket if it contains files"

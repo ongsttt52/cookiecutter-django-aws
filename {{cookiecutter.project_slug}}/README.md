@@ -21,7 +21,8 @@ Django REST API project with AWS deployment
 {% if cookiecutter.use_celery == "yes" -%}
 - **Task Queue**: Celery
 {% endif -%}
-- **Deployment**: AWS {{cookiecutter.aws_deployment}}
+{% if cookiecutter.aws_deployment == "ecs-fargate" %}- **Deployment**: AWS ECS Fargate (production-grade){% endif %}
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}- **Deployment**: AWS EC2 All-in-One (cost-effective demo, ~$15/month){% endif %}
 {% if cookiecutter.use_terraform == "yes" -%}
 - **Infrastructure**: Terraform
 {% endif -%}
@@ -53,7 +54,7 @@ cp .env.example .env
 ```bash
 AWS_ACCESS_KEY_ID=your-access-key-id
 AWS_SECRET_ACCESS_KEY=your-secret-access-key
-AWS_STORAGE_BUCKET_NAME={{cookiecutter.project_slug}}-media-prod
+AWS_STORAGE_BUCKET_NAME={{cookiecutter.project_slug | replace("_", "-")}}-media-bucket
 ```
 
 3. Start all services:
@@ -152,6 +153,29 @@ docker compose exec backend uv run mypy .
 {% if cookiecutter.use_terraform == "yes" -%}
 ## Deployment
 
+### Terraform State Bucket
+
+Each project uses its own S3 bucket (`{{cookiecutter.terraform_state_bucket}}`) for Terraform state.
+The bucket is **automatically created** when you:
+- Run the "Create AWS Infrastructure" GitHub Actions workflow, or
+- Use `deploy.sh`
+
+To manually create it:
+```bash
+aws s3api create-bucket \
+  --bucket {{cookiecutter.terraform_state_bucket}} \
+  --create-bucket-configuration LocationConstraint={{cookiecutter.aws_region}}
+aws s3api put-bucket-versioning \
+  --bucket {{cookiecutter.terraform_state_bucket}} \
+  --versioning-configuration Status=Enabled
+```
+
+To delete the state bucket (after destroying all infrastructure):
+```bash
+# Use the "Destroy AWS Infrastructure" workflow with "delete_state_bucket: yes"
+# Or use: make destroy-aws-manual (will prompt for state bucket deletion)
+```
+
 ### Infrastructure Setup
 
 ```bash
@@ -164,6 +188,30 @@ terraform apply
 ### Application Deployment
 
 Deployment is automated via {{cookiecutter.ci_cd_platform}} on push to main branch.
+
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}
+### EC2 All-in-One Architecture
+
+All services run on a single EC2 instance via Docker Compose:
+
+```
+EC2 Instance (t3.small, ~$15/month)
+├── Docker Compose
+│   ├── PostgreSQL (container)
+│   ├── Redis (container)
+│   ├── Django + Gunicorn (container, port 80)
+│   ├── Celery Worker (optional)
+│   └── Next.js Frontend (optional)
+└── S3 (external, for media files)
+```
+
+**Cost comparison:**
+
+| Mode | Monthly Cost | Best For |
+|------|-------------|----------|
+| EC2 All-in-One | ~$15 | Client demos, prototypes |
+| ECS Fargate | ~$60 | Production, scalability |
+{% endif %}
 {% endif -%}
 
 ## Environment Variables

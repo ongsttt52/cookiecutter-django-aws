@@ -3,6 +3,7 @@
 PROJECT_NAME = {{cookiecutter.project_slug}}
 PROJECT_NAME_NORMALIZED = $(shell echo {{cookiecutter.project_slug}} | tr '_' '-')
 AWS_REGION = {{cookiecutter.aws_region}}
+TF_STATE_BUCKET = {{cookiecutter.terraform_state_bucket}}
 
 help:
 	@echo ""
@@ -105,6 +106,20 @@ init:
 	DJANGO_SECRET_KEY=$$(python3 -c "import secrets; print(secrets.token_urlsafe(50))") && \
 	gh secret set DJANGO_SECRET_KEY --body "$$DJANGO_SECRET_KEY" && \
 	echo "  ✓ DJANGO_SECRET_KEY auto-generated"
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}
+	@echo ""
+	@echo "🔑 Generating EC2 SSH key pair..."
+	@KEY_PATH=~/.ssh/$(PROJECT_NAME_NORMALIZED)-ec2-key; \
+	if [ ! -f "$$KEY_PATH" ]; then \
+		ssh-keygen -t ed25519 -f "$$KEY_PATH" -N "" -C "$(PROJECT_NAME)-ec2"; \
+		echo "  ✓ SSH key generated: $$KEY_PATH"; \
+	else \
+		echo "  ✓ SSH key already exists: $$KEY_PATH"; \
+	fi; \
+	gh secret set EC2_SSH_PRIVATE_KEY < "$$KEY_PATH" && \
+	gh secret set EC2_SSH_PUBLIC_KEY --body "$$(cat $$KEY_PATH.pub)" && \
+	echo "  ✓ SSH keys saved to GitHub Secrets"
+{% endif %}
 	@echo ""
 	@echo "✅ Secrets configured!"
 	@echo ""
@@ -255,6 +270,62 @@ destroy-aws-manual:
 	PROJECT_SLUG=$(PROJECT_NAME_NORMALIZED); \
 	REGION=$(AWS_REGION); \
 	\
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}
+	echo "1️⃣  Terminating EC2 Instance..."; \
+	INSTANCE_ID=$$(aws ec2 describe-instances \
+		--filters "Name=tag:Name,Values=$${PROJECT_SLUG}-ec2-demo" \
+				  "Name=instance-state-name,Values=running,stopped" \
+		--query 'Reservations[0].Instances[0].InstanceId' \
+		--output text --region $$REGION 2>/dev/null); \
+	if [ "$$INSTANCE_ID" != "None" ] && [ -n "$$INSTANCE_ID" ]; then \
+		aws ec2 terminate-instances --instance-ids $$INSTANCE_ID --region $$REGION 2>/dev/null; \
+		echo "  ✓ EC2 instance terminating: $$INSTANCE_ID"; \
+		echo "  Waiting for termination..."; \
+		aws ec2 wait instance-terminated --instance-ids $$INSTANCE_ID --region $$REGION 2>/dev/null || true; \
+	else \
+		echo "  ⚠️  EC2 instance not found"; \
+	fi; \
+	echo ""; \
+	\
+	echo "2️⃣  Releasing Elastic IP..."; \
+	EIP_ALLOC=$$(aws ec2 describe-addresses \
+		--filters "Name=tag:Name,Values=$${PROJECT_SLUG}-eip-demo" \
+		--query 'Addresses[0].AllocationId' \
+		--output text --region $$REGION 2>/dev/null); \
+	if [ "$$EIP_ALLOC" != "None" ] && [ -n "$$EIP_ALLOC" ]; then \
+		aws ec2 release-address --allocation-id $$EIP_ALLOC --region $$REGION 2>/dev/null; \
+		echo "  ✓ Elastic IP released"; \
+	else \
+		echo "  ⚠️  Elastic IP not found"; \
+	fi; \
+	echo ""; \
+	\
+	echo "3️⃣  Deleting EC2 Key Pair..."; \
+	aws ec2 delete-key-pair --key-name $${PROJECT_SLUG}-ec2-key-demo --region $$REGION 2>/dev/null \
+		|| echo "  ⚠️  Key pair not found"; \
+	echo ""; \
+	\
+	echo "4️⃣  Deleting IAM Instance Profile..."; \
+	aws iam remove-role-from-instance-profile \
+		--instance-profile-name $${PROJECT_SLUG}-ec2-profile-demo \
+		--role-name $${PROJECT_SLUG}-ec2-role-demo 2>/dev/null || true; \
+	aws iam delete-instance-profile \
+		--instance-profile-name $${PROJECT_SLUG}-ec2-profile-demo 2>/dev/null \
+		|| echo "  ⚠️  Instance profile not found"; \
+	echo ""; \
+	\
+	echo "5️⃣  Deleting EC2 IAM Role..."; \
+	INLINE_POLICIES=$$(aws iam list-role-policies \
+		--role-name $${PROJECT_SLUG}-ec2-role-demo \
+		--query 'PolicyNames[]' --output text 2>/dev/null); \
+	for policy in $$INLINE_POLICIES; do \
+		aws iam delete-role-policy --role-name $${PROJECT_SLUG}-ec2-role-demo --policy-name $$policy 2>/dev/null; \
+	done; \
+	aws iam delete-role --role-name $${PROJECT_SLUG}-ec2-role-demo 2>/dev/null \
+		|| echo "  ⚠️  EC2 IAM role not found"; \
+	echo "";
+{% endif %}
+{% if cookiecutter.aws_deployment == "ecs-fargate" %}
 	echo "1️⃣  Deleting ECS Services..."; \
 	aws ecs update-service \
 		--cluster $${PROJECT_SLUG}-cluster-demo \
@@ -342,13 +413,7 @@ destroy-aws-manual:
 		--region $$REGION 2>/dev/null || echo "  ⚠️  Redis not found"; \
 	echo ""; \
 	\
-	echo "8️⃣  Deleting S3 Bucket..."; \
-	aws s3 rb s3://$${PROJECT_SLUG}-media-demo \
-		--force \
-		--region $$REGION 2>/dev/null || echo "  ⚠️  S3 Bucket not found"; \
-	echo ""; \
-	\
-	echo "9️⃣  Deleting ECR Repositories..."; \
+	echo "8️⃣  Deleting ECR Repositories..."; \
 	aws ecr delete-repository \
 		--repository-name $${PROJECT_SLUG}-backend-demo \
 		--force \
@@ -359,21 +424,34 @@ destroy-aws-manual:
 		--region $$REGION 2>/dev/null || echo "  ⚠️  Frontend ECR Repository not found (may not exist)"; \
 	echo ""; \
 	\
-	echo "🔟  Deleting CloudWatch Log Groups..."; \
-	aws logs delete-log-group \
-		--log-group-name /ecs/$${PROJECT_SLUG}-backend-demo \
-		--region $$REGION 2>/dev/null || echo "  ⚠️  Backend log group not found"; \
-	aws logs delete-log-group \
-		--log-group-name /ecs/$${PROJECT_SLUG}-frontend-demo \
-		--region $$REGION 2>/dev/null || echo "  ⚠️  Frontend log group not found (may not exist)"; \
-	echo ""; \
-	\
 	echo "1️⃣1️⃣  Waiting for resources to finish deleting..."; \
 	echo "  (RDS and ElastiCache may take 5-10 minutes)"; \
 	sleep 30; \
+	echo "";
+{% endif %}
+	@. ./.env && \
+	PROJECT_SLUG=$(PROJECT_NAME_NORMALIZED); \
+	REGION=$(AWS_REGION); \
+	\
+	echo "Deleting S3 Bucket..."; \
+	aws s3 rb s3://$${PROJECT_SLUG}-media-bucket \
+		--force \
+		--region $$REGION 2>/dev/null || echo "  ⚠️  S3 Bucket not found"; \
 	echo ""; \
 	\
-	echo "1️⃣2️⃣  Deleting Security Groups..."; \
+	echo "Deleting CloudWatch Log Groups..."; \
+	aws logs delete-log-group \
+		--log-group-name /ecs/$${PROJECT_SLUG}-backend-demo \
+		--region $$REGION 2>/dev/null || true; \
+	aws logs delete-log-group \
+		--log-group-name /ecs/$${PROJECT_SLUG}-frontend-demo \
+		--region $$REGION 2>/dev/null || true; \
+	aws logs delete-log-group \
+		--log-group-name /ec2/$${PROJECT_SLUG}-demo \
+		--region $$REGION 2>/dev/null || true; \
+	echo ""; \
+	\
+	echo "Deleting Security Groups..."; \
 	VPC_ID=$$(aws ec2 describe-vpcs \
 		--filters "Name=tag:Name,Values=$${PROJECT_SLUG}-vpc-demo" \
 		--region $$REGION \
@@ -450,19 +528,20 @@ destroy-aws-manual:
 	fi; \
 	echo ""; \
 	\
-	echo "1️⃣7️⃣  Deleting RDS Subnet Group..."; \
+{% if cookiecutter.aws_deployment == "ecs-fargate" %}
+	echo "Deleting RDS Subnet Group..."; \
 	aws rds delete-db-subnet-group \
 		--db-subnet-group-name $${PROJECT_SLUG}-db-subnet-demo \
 		--region $$REGION 2>/dev/null || echo "  ⚠️  RDS Subnet Group not found"; \
 	echo ""; \
 	\
-	echo "1️⃣8️⃣  Deleting ElastiCache Subnet Group..."; \
+	echo "Deleting ElastiCache Subnet Group..."; \
 	aws elasticache delete-cache-subnet-group \
 		--cache-subnet-group-name $${PROJECT_SLUG}-redis-subnet-demo \
 		--region $$REGION 2>/dev/null || echo "  ⚠️  Redis Subnet Group not found"; \
 	echo ""; \
 	\
-	echo "1️⃣9️⃣  Deleting IAM Roles..."; \
+	echo "Deleting IAM Roles..."; \
 	for ROLE_NAME in $${PROJECT_SLUG}-ecs-execution-role-demo $${PROJECT_SLUG}-ecs-task-role-demo; do \
 		echo "  Deleting role: $$ROLE_NAME"; \
 		POLICIES=$$(aws iam list-attached-role-policies \
@@ -485,16 +564,55 @@ destroy-aws-manual:
 		done; \
 		aws iam delete-role --role-name $$ROLE_NAME 2>/dev/null && echo "    ✓ Deleted" || echo "    ⚠️  Not found"; \
 	done; \
-	echo ""; \
-	\
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	echo "✅ AWS resources deletion completed!"; \
-	echo ""; \
-	echo "⚠️  Note: RDS and ElastiCache deletion may still be in progress."; \
-	echo "   Check AWS Console to verify all resources are deleted."; \
-	echo ""; \
-	echo "To verify deletion:"; \
-	echo "  aws resourcegroupstaggingapi get-resources --region $$REGION"; \
-	echo ""
+	echo "";
+{% endif %}
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✅ AWS resources deletion completed!"
+	@echo ""
+	@echo "⚠️  Note: Some resource deletions may still be in progress."
+	@echo "   Check AWS Console to verify all resources are deleted."
+	@echo ""
+	@echo "Terraform state bucket: $(TF_STATE_BUCKET)"
+	@read -p "Also delete Terraform state bucket? (yes/no) [no]: " DEL_STATE; \
+	if [ "$$DEL_STATE" = "yes" ]; then \
+		echo ""; \
+		echo "🗑️  Deleting state bucket: $(TF_STATE_BUCKET)"; \
+		echo "  Removing all object versions..."; \
+		aws s3api list-object-versions \
+			--bucket $(TF_STATE_BUCKET) \
+			--query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
+			--output json 2>/dev/null | \
+		python3 -c "\
+import sys, json; \
+data = json.load(sys.stdin); \
+objects = data.get('Objects') or []; \
+[print(json.dumps({'Objects': objects[i:i+1000], 'Quiet': True})) for i in range(0, len(objects), 1000)]" | \
+		while read -r payload; do \
+			aws s3api delete-objects --bucket $(TF_STATE_BUCKET) --delete "$$payload" 2>/dev/null || true; \
+		done; \
+		echo "  Removing all delete markers..."; \
+		aws s3api list-object-versions \
+			--bucket $(TF_STATE_BUCKET) \
+			--query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' \
+			--output json 2>/dev/null | \
+		python3 -c "\
+import sys, json; \
+data = json.load(sys.stdin); \
+objects = data.get('Objects') or []; \
+[print(json.dumps({'Objects': objects[i:i+1000], 'Quiet': True})) for i in range(0, len(objects), 1000)]" | \
+		while read -r payload; do \
+			aws s3api delete-objects --bucket $(TF_STATE_BUCKET) --delete "$$payload" 2>/dev/null || true; \
+		done; \
+		aws s3api delete-bucket --bucket $(TF_STATE_BUCKET) 2>/dev/null \
+			&& echo "  ✅ State bucket deleted" \
+			|| echo "  ⚠️  State bucket deletion failed"; \
+	else \
+		echo "  ℹ️  State bucket preserved: $(TF_STATE_BUCKET)"; \
+	fi
+	@echo ""
+	@echo "To verify deletion:"
+	@echo "  aws resourcegroupstaggingapi get-resources --region $(AWS_REGION)"
+	@echo ""
 
 .DEFAULT_GOAL := help

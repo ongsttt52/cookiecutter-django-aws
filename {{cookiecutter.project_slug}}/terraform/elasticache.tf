@@ -1,3 +1,4 @@
+{% if cookiecutter.aws_deployment == "ecs-fargate" %}
 # ==============================================================================
 # ElastiCache Redis (캐시 + Celery 브로커)
 # ==============================================================================
@@ -38,3 +39,4 @@ resource "aws_elasticache_cluster" "main" {
     Name = "${local.project_name_normalized}-redis-${var.environment}"
   }
 }
+{% endif %}

@@ -1,6 +1,6 @@
 # Django AWS Cookiecutter Template - 진행상황
 
-**마지막 업데이트:** 2026-02-22
+**마지막 업데이트:** 2026-02-27
 
 ---
 
@@ -222,24 +222,146 @@ ALB (port 80)
 
 ---
 
+### Phase 6.5: post_gen_project.py 개선 (완료)
+
+**작업일**: 2026-02-22
+
+- [x] `use_celery=no`일 때 `backend/config/celery.py` 자동 삭제 로직 추가
+  - 기존에는 docstring만 있는 빈 파일이 남아있었음
+  - `remove_file()` 헬퍼 함수 추가
+
+### Phase 7: E2E 배포 테스트 (완료)
+
+**작업일**: 2026-02-22 ~ 2026-02-27
+
+#### 1단계: Cookiecutter 렌더링 테스트 ✅
+
+- [x] 케이스 A (풀옵션: celery + websocket + frontend) 렌더링 성공
+- [x] 케이스 B (최소: backend only) 렌더링 성공
+- [x] `{{cookiecutter.*}}` 잔여 변수 없음 확인
+- [x] `{% %}` 잔여 조건문 없음 확인
+- [x] `use_frontend=no` → `frontend/` 삭제 확인
+- [x] `use_celery=no` → `celery.py` 삭제 확인
+- [x] `package-lock.json` 자동 생성 확인 (use_frontend=yes)
+- [x] docker-compose.yml 조건부 서비스 정상 렌더링
+- [x] Terraform 파일 조건부 리소스 정상 렌더링
+- [x] deploy.yml 조건부 job 정상 렌더링
+- [x] 프로젝트명 정규화 (`test_full` → `test-full`) 확인
+- [x] `local.project_name_normalized` 통일 확인 (인라인 replace 잔재 없음)
+
+#### 2단계: Docker Compose 로컬 테스트 ✅
+
+- [x] 케이스 A: 7개 컨테이너 전부 정상 구동 (db, redis, backend, celery_worker, celery_beat, websocket, frontend)
+- [x] 케이스 B: 2개 컨테이너 정상 구동 (db, backend)
+- [x] DB 마이그레이션 자동 실행 확인
+- [x] `/api/health/` → `{"status":"healthy","database":"connected"}`
+- [x] `/api/admin/login/` → HTTP 200
+- [x] `/api/docs/` (Swagger UI) → HTTP 200
+- [x] `localhost:3000` (Frontend) → HTTP 200 (케이스 A)
+- [x] Celery Worker ready 확인
+- [x] Celery Beat started 확인
+- [x] WebSocket (Daphne) listening on 8001 확인
+
+**참고**: 첫 실행 시 `uv sync` 패키지 설치로 Backend 시작에 30~40초 소요
+
+#### 3단계: Terraform 검증 ✅
+
+- [x] 케이스 A: `terraform init -backend=false` 성공
+- [x] 케이스 A: `terraform validate` — Success
+- [x] 케이스 B: `terraform init -backend=false` 성공
+- [x] 케이스 B: `terraform validate` — Success
+- [x] 조건부 렌더링 검증: 케이스 B에서 frontend 리소스 제거 확인 (ecs.tf 232→137줄, alb.tf 103→61줄, ecr.tf 80→43줄)
+- [x] `terraform apply` 리소스 생성 확인 (4단계에서 검증)
+
+#### 4단계: AWS 실제 배포 테스트 ✅
+
+- [x] `make init` → GitHub 레포 생성 (ongsttt52/test-e2e) + Secrets 설정
+- [x] `create-infra.yml` → Terraform apply 성공 (10분 소요)
+- [x] `deploy.yml` → Docker 빌드 + ECR push + ECS 배포 성공 (6분 소요)
+- [x] ALB 라우팅 확인:
+  - `/api/health/` → `{"status":"healthy","database":"connected"}`
+  - `/api/admin/` → HTTP 200
+  - `/api/docs/` → Swagger UI 정상 반환
+  - `/` → HTTP 200 (Next.js, X-Powered-By: Next.js)
+- [ ] `destroy.yml` → Terraform destroy (사용자 실행 예정)
+
+**발견된 이슈 (배포 과정):**
+1. `.env`에 AWS credentials 플레이스홀더 → `make setup-secrets`가 가짜 값 등록 → Secrets 재설정으로 해결
+2. Terraform S3 Backend 버킷 (`demodev-lab-terraform-states`) 접근 불가 → 개인 버킷 생성으로 해결
+
+---
+
 ## 현재 작업 중 🚧
 
-(없음)
+Phase 7 완료. Phase 8 이후 작업 선택 필요.
+
+### Phase 8: EC2 All-in-One 배포 옵션 + deploy.sh (완료)
+
+**Phase A: EC2 All-in-One 배포 옵션**
+- [x] `cookiecutter.json`에 `aws_deployment` 배열 추가 (`["ecs-fargate", "ec2-all-in-one"]`)
+- [x] Terraform EC2 파일 3개 생성 (`ec2.tf`, `ec2_iam.tf`, `ec2_security.tf`)
+- [x] 기존 Terraform 7개 파일 `ecs-fargate` 조건부 래핑
+- [x] `variables.tf` EC2 변수 추가, `outputs.tf` 배포 모드별 분기
+- [x] `docker-compose.prod.yml` EC2 프로덕션용 생성
+- [x] `deploy-ec2.yml` GitHub Actions 워크플로우 생성
+- [x] `create-infra.yml`, `destroy.yml` 배포 모드별 분기 수정
+- [x] `post_gen_project.py` 배포 모드별 파일 정리 로직 추가
+- [x] `Makefile` EC2 모드 지원 (SSH 키 생성, destroy 분기)
+- [x] `.env.example`, `README.md` EC2 설명 추가
+- [x] E2E 테스트 4개 케이스 (ECS+풀, ECS+최소, EC2+풀, EC2+최소) 모두 PASS
+
+**Phase B: deploy.sh 전체 워크플로우 스크립트**
+- [x] `deploy.sh` 작성 (Step 0~9: 사전조건, 입력, 렌더링, .env, 로컬테스트, GitHub init, 인프라생성, 배포, 검증, 결과)
+- [x] `--no-input`, `--skip-local-test` 옵션 지원
+- [x] AWS credentials 자동 감지, EC2 SSH 키 자동 생성
+
+**EC2 All-in-One 아키텍처:**
+```
+EC2 Instance (t3.small, ~$15/month)
+├── Docker Compose
+│   ├── PostgreSQL (container)
+│   ├── Redis (container)
+│   ├── Django + Gunicorn (port 80)
+│   ├── Celery Worker (optional)
+│   └── Next.js Frontend (optional)
+└── S3 (external, for media files)
+```
+
+**비용 비교:**
+| 모드 | 월 비용 | 적합한 용도 |
+|------|---------|-------------|
+| EC2 All-in-One | ~$15 | 클라이언트 데모, 프로토타입 |
+| ECS Fargate | ~$60 | 프로덕션, 확장성 |
 
 ---
 
 ## 다음 단계
 
-**우선순위 1: End-to-End 배포 테스트**
-- [ ] `cookiecutter` 실행 → `use_frontend: yes/no` 양쪽 테스트
-- [ ] `docker compose up` 로컬 테스트
-- [ ] `terraform validate` 성공 확인
-- [ ] AWS 배포 → ALB 라우팅 확인 (`/`, `/api/*`)
+**우선순위 1: S3 Presigned URL API 구현**
+- [ ] `backend/apps/files/` 앱 생성
+- [ ] Upload/Download presigned URL 엔드포인트
+- [ ] URL 라우팅 등록
+- [ ] E2E 테스트에서 S3 업로드/다운로드 검증
 
-**우선순위 3: 추가 기능 (선택)**
-- [ ] EC2 All-in-One 배포 옵션 추가
-- [ ] Superuser 자동 생성 스크립트
+**우선순위 2: CI 코드 품질 단계 추가**
+- [ ] `deploy.yml`에 lint/test job 추가 (ruff check, black --check, pytest)
+- [ ] Health check 등 기본 테스트 코드 작성
+- [ ] 배포 전 품질 게이트 역할
+
+**우선순위 3: Superuser 자동 생성 스크립트**
+- [ ] `entrypoint.sh`에 환경변수 기반 superuser 생성 로직
+- [ ] `DJANGO_SUPERUSER_EMAIL`, `DJANGO_SUPERUSER_PASSWORD` 환경변수 활용
+- [ ] 첫 배포 시 Admin 즉시 접근 가능
+
+**우선순위 4: 템플릿 DX 개선**
+- [ ] `.env.example`에 AWS credentials 플레이스홀더 경고 문구 추가
+- [ ] `make init` 실행 전 `.env` 유효성 검사 강화 (플레이스홀더 감지)
+- [ ] `terraform_state_bucket` 값을 cookiecutter.json 변수로 분리
+
+**우선순위 5: 추가 기능 (선택)**
+- [x] EC2 All-in-One 배포 옵션 추가 (Phase 8에서 완료)
 - [ ] CloudWatch 로그 필터 설정
+- [ ] 최소 케이스(backend only) AWS E2E 배포 테스트
 
 ---
 
@@ -348,10 +470,10 @@ make destroy-aws-manual
 - S3, VPC, CloudWatch: ~$6
 - **총 ~$100/월**
 
-### EC2 All-in-One (계획 중)
-- EC2 t3.micro: ~$7/월
+### EC2 All-in-One (구현 완료)
+- EC2 t3.small: ~$15/월
 - **모든 컨테이너 포함 (Django, Celery, Redis, PostgreSQL)**
-- 데모용으로 충분한 성능
+- 데모용으로 충분한 성능, ECS 대비 75% 비용 절감
 
 **개발/테스트:**
 - 10분 테스트: ~$0.01 (10원)

@@ -1,0 +1,142 @@
+# ==============================================================================
+# EC2 All-in-One Production Docker Compose
+# ==============================================================================
+
+services:
+  db:
+    image: postgres:16
+    container_name: {{cookiecutter.project_slug}}_db
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-{{cookiecutter.project_slug}}}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: {{cookiecutter.project_slug}}_redis
+    restart: always
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    container_name: {{cookiecutter.project_slug}}_backend
+    restart: always
+    ports:
+      - "80:8000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-{{cookiecutter.project_slug}}}
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+{% if cookiecutter.use_celery == "yes" %}
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    container_name: {{cookiecutter.project_slug}}_celery_worker
+    restart: always
+    entrypoint: []
+    command: uv run celery -A config worker -l info
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-{{cookiecutter.project_slug}}}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+      - backend
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    container_name: {{cookiecutter.project_slug}}_celery_beat
+    restart: always
+    entrypoint: []
+    command: uv run celery -A config beat -l info
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-{{cookiecutter.project_slug}}}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - db
+      - redis
+      - backend
+
+{% endif %}
+{% if cookiecutter.use_websocket == "yes" %}
+  websocket:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    container_name: {{cookiecutter.project_slug}}_websocket
+    restart: always
+    entrypoint: []
+    command: uv run daphne -b 0.0.0.0 -p 8001 config.asgi:application
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-{{cookiecutter.project_slug}}}
+      - REDIS_URL=redis://redis:6379/0
+      - CHANNEL_LAYERS_HOST=redis://redis:6379/1
+    depends_on:
+      - db
+      - redis
+
+{% endif %}
+{% if cookiecutter.use_frontend == "yes" %}
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      platforms:
+        - linux/amd64
+    container_name: {{cookiecutter.project_slug}}_frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+    depends_on:
+      - backend
+
+{% endif %}
+volumes:
+  postgres_data:
+  redis_data:

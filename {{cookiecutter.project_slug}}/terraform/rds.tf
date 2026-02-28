@@ -1,3 +1,4 @@
+{% if cookiecutter.aws_deployment == "ecs-fargate" %}
 # ==============================================================================
 # RDS PostgreSQL 데이터베이스
 # ==============================================================================
@@ -49,3 +50,4 @@ resource "aws_db_instance" "main" {
     Name = "${local.project_name_normalized}-db-${var.environment}"
   }
 }
+{% endif %}
