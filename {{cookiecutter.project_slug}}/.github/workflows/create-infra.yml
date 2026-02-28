@@ -30,15 +30,30 @@ jobs:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
           terraform_wrapper: false
 
+      # -----------------------------------------------------------------
+      # Terraform state 전용 S3 버킷을 자동 생성합니다.
+      # terraform init이 이 버킷을 backend로 참조하기 때문에,
+      # 반드시 terraform init보다 먼저 실행되어야 합니다.
+      # -----------------------------------------------------------------
       - name: Create Terraform State Bucket
         env:
           TF_STATE_BUCKET: {% endraw %}{{cookiecutter.terraform_state_bucket}}{% raw %}
         run: |
           echo "Checking Terraform state bucket: $TF_STATE_BUCKET"
+
+          # (1) head-bucket: 버킷 존재 여부를 HEAD 요청으로 확인
+          #     - 버킷 목록을 가져오는 것보다 가볍고 빠름
+          #     - 존재하면 exit 0, 없으면 exit 비정상 → else 분기로 이동
           if aws s3api head-bucket --bucket "$TF_STATE_BUCKET" 2>/dev/null; then
             echo "✅ State bucket already exists"
           else
             echo "📦 Creating state bucket: $TF_STATE_BUCKET"
+
+            # (2) create-bucket: S3 버킷 생성
+            #     - S3 버킷명은 전 세계 AWS 계정 통틀어 고유해야 함
+            #     - us-east-1은 S3의 기본(legacy) 리전이라 LocationConstraint를 넣으면
+            #       "IllegalLocationConstraintException" 에러 발생 → 해당 옵션 생략
+            #     - 그 외 리전은 LocationConstraint로 버킷 위치를 명시해야 함
             if [ "${{ env.AWS_REGION }}" = "us-east-1" ]; then
               aws s3api create-bucket \
                 --bucket "$TF_STATE_BUCKET"
@@ -48,15 +63,30 @@ jobs:
                 --create-bucket-configuration LocationConstraint=${{ env.AWS_REGION }}
             fi
 
+            # (3) versioning: 파일이 덮어씌워져도 이전 버전을 모두 보관
+            #     - terraform apply가 실패하거나 state가 꼬였을 때 이전 버전 복원 가능
+            #     - Terraform 공식 문서에서 state 버킷에 versioning 활성화를 권장함
+            #     - 단, versioning이 켜진 버킷은 단순 `aws s3 rb --force`로 삭제 불가
+            #       → destroy.yml에서 별도 삭제 로직(버전 객체 전체 삭제 후 버킷 삭제)을 사용
             aws s3api put-bucket-versioning \
               --bucket "$TF_STATE_BUCKET" \
               --versioning-configuration Status=Enabled
 
+            # (4) public-access-block: 버킷의 퍼블릭 접근을 4중으로 완전 차단
+            #     - Terraform state에는 DB 비밀번호, Secret Key 등 민감 정보가 평문으로 저장됨
+            #     - 이 설정은 "인터넷에서 접근 가능한가"만 차단하는 것이지,
+            #       같은 AWS 계정 내 IAM 인증된 사용자(팀원)의 접근은 정상적으로 허용됨
+            #     - 즉 개발/운영에 아무 영향 없이 외부 노출만 방지하는 안전장치
             aws s3api put-public-access-block \
               --bucket "$TF_STATE_BUCKET" \
               --public-access-block-configuration \
                 BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 
+            # (5) encryption: 저장되는 모든 파일을 AES-256으로 자동 암호화 (SSE-S3)
+            #     - S3에 파일을 올릴 때 암호화 옵션을 안 넣어도 AWS가 자동으로 암호화
+            #     - 읽을 때도 IAM 인증만 되면 AWS가 자동으로 복호화해서 내려줌
+            #       → Terraform이나 개발자가 복호화 코드를 작성할 필요 없음
+            #     - AWS가 키를 관리하는 SSE-S3 방식 (무료, 추가 설정 불필요)
             aws s3api put-bucket-encryption \
               --bucket "$TF_STATE_BUCKET" \
               --server-side-encryption-configuration \
