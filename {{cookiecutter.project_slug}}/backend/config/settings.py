@@ -39,6 +39,7 @@ INSTALLED_APPS = [
 {% endif -%}
     # Local apps
     'apps.core',
+    'apps.files',
 ]
 
 MIDDLEWARE = [
@@ -154,6 +155,7 @@ AWS_STORAGE_BUCKET_NAME = env(
 AWS_S3_REGION_NAME = '{{cookiecutter.aws_region}}'
 AWS_S3_SIGNATURE_VERSION = 's3v4'
 AWS_PRESIGNED_URL_EXPIRY = 3600  # 1 hour
+AWS_MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
 
 # File Upload/Download Strategy:
 # All file operations (static & media) use presigned URLs
@@ -194,6 +196,9 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'API documentation',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
+    'TAGS': [
+        {'name': 'files', 'description': 'S3 Presigned URL 파일 업로드/다운로드'},
+    ],
 }
 
 # Security settings (Production)
