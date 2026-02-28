@@ -17,7 +17,7 @@
   "github_runner": ["ubuntu-latest", "self-hosted"],
   "use_terraform": "yes",
   "terraform_state_backend": "s3",
-  "terraform_state_bucket": "demodev-lab-terraform-states",
+  "terraform_state_bucket": "{{ cookiecutter.project_slug.replace('_', '-') }}-state-bucket",
 
   "_copy_without_render": [
     "*.pyc",

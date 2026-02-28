@@ -3,6 +3,7 @@
 PROJECT_NAME = {{cookiecutter.project_slug}}
 PROJECT_NAME_NORMALIZED = $(shell echo {{cookiecutter.project_slug}} | tr '_' '-')
 AWS_REGION = {{cookiecutter.aws_region}}
+TF_STATE_BUCKET = {{cookiecutter.terraform_state_bucket}}
 
 help:
 	@echo ""
@@ -433,7 +434,7 @@ destroy-aws-manual:
 	REGION=$(AWS_REGION); \
 	\
 	echo "Deleting S3 Bucket..."; \
-	aws s3 rb s3://$${PROJECT_SLUG}-media-demo \
+	aws s3 rb s3://$${PROJECT_SLUG}-media-bucket \
 		--force \
 		--region $$REGION 2>/dev/null || echo "  ⚠️  S3 Bucket not found"; \
 	echo ""; \
@@ -565,15 +566,53 @@ destroy-aws-manual:
 	done; \
 	echo "";
 {% endif %}
-	@echo ""; \
-	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
-	echo "✅ AWS resources deletion completed!"; \
-	echo ""; \
-	echo "⚠️  Note: Some resource deletions may still be in progress."; \
-	echo "   Check AWS Console to verify all resources are deleted."; \
-	echo ""; \
-	echo "To verify deletion:"; \
-	echo "  aws resourcegroupstaggingapi get-resources --region $(AWS_REGION)"; \
-	echo ""
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✅ AWS resources deletion completed!"
+	@echo ""
+	@echo "⚠️  Note: Some resource deletions may still be in progress."
+	@echo "   Check AWS Console to verify all resources are deleted."
+	@echo ""
+	@echo "Terraform state bucket: $(TF_STATE_BUCKET)"
+	@read -p "Also delete Terraform state bucket? (yes/no) [no]: " DEL_STATE; \
+	if [ "$$DEL_STATE" = "yes" ]; then \
+		echo ""; \
+		echo "🗑️  Deleting state bucket: $(TF_STATE_BUCKET)"; \
+		echo "  Removing all object versions..."; \
+		aws s3api list-object-versions \
+			--bucket $(TF_STATE_BUCKET) \
+			--query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
+			--output json 2>/dev/null | \
+		python3 -c "\
+import sys, json; \
+data = json.load(sys.stdin); \
+objects = data.get('Objects') or []; \
+[print(json.dumps({'Objects': objects[i:i+1000], 'Quiet': True})) for i in range(0, len(objects), 1000)]" | \
+		while read -r payload; do \
+			aws s3api delete-objects --bucket $(TF_STATE_BUCKET) --delete "$$payload" 2>/dev/null || true; \
+		done; \
+		echo "  Removing all delete markers..."; \
+		aws s3api list-object-versions \
+			--bucket $(TF_STATE_BUCKET) \
+			--query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' \
+			--output json 2>/dev/null | \
+		python3 -c "\
+import sys, json; \
+data = json.load(sys.stdin); \
+objects = data.get('Objects') or []; \
+[print(json.dumps({'Objects': objects[i:i+1000], 'Quiet': True})) for i in range(0, len(objects), 1000)]" | \
+		while read -r payload; do \
+			aws s3api delete-objects --bucket $(TF_STATE_BUCKET) --delete "$$payload" 2>/dev/null || true; \
+		done; \
+		aws s3api delete-bucket --bucket $(TF_STATE_BUCKET) 2>/dev/null \
+			&& echo "  ✅ State bucket deleted" \
+			|| echo "  ⚠️  State bucket deletion failed"; \
+	else \
+		echo "  ℹ️  State bucket preserved: $(TF_STATE_BUCKET)"; \
+	fi
+	@echo ""
+	@echo "To verify deletion:"
+	@echo "  aws resourcegroupstaggingapi get-resources --region $(AWS_REGION)"
+	@echo ""
 
 .DEFAULT_GOAL := help

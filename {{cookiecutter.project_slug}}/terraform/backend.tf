@@ -1,5 +1,6 @@
 # Terraform State Backend Configuration
-# State는 S3 bucket에 저장되어 팀원들과 공유됩니다.
+# 프로젝트별 전용 S3 버킷에 state를 저장합니다.
+# 버킷은 GitHub Actions 또는 deploy.sh에서 자동 생성됩니다.
 # 버킷: {{cookiecutter.terraform_state_bucket}}
 # 경로: {{cookiecutter.project_slug}}/<environment>/terraform.tfstate
 

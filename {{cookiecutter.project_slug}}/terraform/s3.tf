@@ -4,14 +4,14 @@
 
 # S3 버킷 생성
 resource "aws_s3_bucket" "media" {
-  bucket = "${local.project_name_normalized}-media-${var.environment}"
+  bucket = "${local.project_name_normalized}-media-bucket"
 
   # demo/dev: terraform destroy 시 파일 포함 삭제 가능
   # prod: 보호 (파일 먼저 삭제해야 버킷 삭제 가능)
   force_destroy = var.environment == "prod" ? false : true
 
   tags = {
-    Name = "${local.project_name_normalized}-media-${var.environment}"
+    Name = "${local.project_name_normalized}-media-bucket"
   }
 }
 

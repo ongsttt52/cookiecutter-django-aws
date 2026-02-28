@@ -54,7 +54,7 @@ cp .env.example .env
 ```bash
 AWS_ACCESS_KEY_ID=your-access-key-id
 AWS_SECRET_ACCESS_KEY=your-secret-access-key
-AWS_STORAGE_BUCKET_NAME={{cookiecutter.project_slug}}-media-prod
+AWS_STORAGE_BUCKET_NAME={{cookiecutter.project_slug | replace("_", "-")}}-media-bucket
 ```
 
 3. Start all services:
@@ -152,6 +152,29 @@ docker compose exec backend uv run mypy .
 
 {% if cookiecutter.use_terraform == "yes" -%}
 ## Deployment
+
+### Terraform State Bucket
+
+Each project uses its own S3 bucket (`{{cookiecutter.terraform_state_bucket}}`) for Terraform state.
+The bucket is **automatically created** when you:
+- Run the "Create AWS Infrastructure" GitHub Actions workflow, or
+- Use `deploy.sh`
+
+To manually create it:
+```bash
+aws s3api create-bucket \
+  --bucket {{cookiecutter.terraform_state_bucket}} \
+  --create-bucket-configuration LocationConstraint={{cookiecutter.aws_region}}
+aws s3api put-bucket-versioning \
+  --bucket {{cookiecutter.terraform_state_bucket}} \
+  --versioning-configuration Status=Enabled
+```
+
+To delete the state bucket (after destroying all infrastructure):
+```bash
+# Use the "Destroy AWS Infrastructure" workflow with "delete_state_bucket: yes"
+# Or use: make destroy-aws-manual (will prompt for state bucket deletion)
+```
 
 ### Infrastructure Setup
 
