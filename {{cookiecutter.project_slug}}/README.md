@@ -54,7 +54,7 @@ cp .env.example .env
 ```bash
 AWS_ACCESS_KEY_ID=your-access-key-id
 AWS_SECRET_ACCESS_KEY=your-secret-access-key
-AWS_STORAGE_BUCKET_NAME={{cookiecutter.project_slug}}-media-prod
+AWS_STORAGE_BUCKET_NAME={{cookiecutter.project_slug | replace("_", "-")}}-media-bucket
 ```
 
 3. Start all services:

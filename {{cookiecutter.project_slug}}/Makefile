@@ -434,7 +434,7 @@ destroy-aws-manual:
 	REGION=$(AWS_REGION); \
 	\
 	echo "Deleting S3 Bucket..."; \
-	aws s3 rb s3://$${PROJECT_SLUG}-media-demo \
+	aws s3 rb s3://$${PROJECT_SLUG}-media-bucket \
 		--force \
 		--region $$REGION 2>/dev/null || echo "  ⚠️  S3 Bucket not found"; \
 	echo ""; \
