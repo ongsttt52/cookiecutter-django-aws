@@ -44,13 +44,15 @@ resource "aws_instance" "main" {
   }
 
   user_data = base64encode(templatefile("${path.module}/user-data.sh", {
-    project_slug          = var.project_name
-    project_name_normalized = local.project_name_normalized
-    db_password           = var.db_password
-    django_secret_key     = var.django_secret_key
-    s3_bucket_name        = aws_s3_bucket.media.bucket
-    aws_region            = var.aws_region
-    environment           = var.environment
+    project_slug              = var.project_name
+    project_name_normalized   = local.project_name_normalized
+    db_password               = var.db_password
+    django_secret_key         = var.django_secret_key
+    s3_bucket_name            = aws_s3_bucket.media.bucket
+    aws_region                = var.aws_region
+    environment               = var.environment
+    django_superuser_email    = var.django_superuser_email
+    django_superuser_password = var.django_superuser_password
   }))
 
   tags = {
