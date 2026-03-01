@@ -247,9 +247,9 @@ jobs:
           echo "🎉 Deployment completed successfully!"
           echo ""
           echo "📦 Backend Image: ${{ needs.build-backend.outputs.image_tag }}"{% endraw %}
-{% if cookiecutter.use_frontend == "yes" %}{% raw %}
+{%- if cookiecutter.use_frontend == "yes" %}{% raw %}
           echo "📦 Frontend Image: ${{ needs.build-frontend.outputs.image_tag }}"{% endraw %}
-{% endif %}{% raw %}
+{%- endif %}{% raw %}
           echo "🌐 App URL: ${{ steps.alb.outputs.url }}"
           echo "🔧 ECS Cluster: ${{ env.ECS_CLUSTER }}"
           echo ""

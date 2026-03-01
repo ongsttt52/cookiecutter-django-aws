@@ -61,10 +61,10 @@ jobs:
             -var="django_secret_key=${{ secrets.DJANGO_SECRET_KEY }}" \
             -var="django_superuser_email=admin@example.com" \
             -var="django_superuser_password=${{ secrets.DJANGO_SUPERUSER_PASSWORD }}" \{% endraw %}
-{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
+{%- if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
             -var="ec2_public_key=${{ secrets.EC2_SSH_PUBLIC_KEY }}" \
             -var='ssh_allowed_cidrs=["0.0.0.0/0"]' \{% endraw %}
-{% endif %}{% raw %}
+{%- endif %}{% raw %}
             -auto-approve
 
           echo "✅ Infrastructure destroyed successfully!"
@@ -133,18 +133,18 @@ jobs:
           echo "Destroyed resources:"
           echo "  - VPC and networking"
           echo "  - S3 Bucket (if empty)"{% endraw %}
-{% if cookiecutter.aws_deployment == "ecs-fargate" %}{% raw %}
+{%- if cookiecutter.aws_deployment == "ecs-fargate" %}{% raw %}
           echo "  - RDS PostgreSQL"
           echo "  - ElastiCache Redis"
           echo "  - ECS Cluster and Services"
           echo "  - ECR Repository"
           echo "  - Application Load Balancer"{% endraw %}
-{% endif %}
-{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
+{%- endif %}
+{%- if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
           echo "  - EC2 Instance and Elastic IP"
           echo "  - EC2 Key Pair"
           echo "  - IAM Instance Profile"{% endraw %}
-{% endif %}{% raw %}
+{%- endif %}{% raw %}
           echo ""
           if [ "${{ github.event.inputs.delete_state_bucket }}" = "yes" ]; then
             echo "  - Terraform state bucket: {% endraw %}{{cookiecutter.terraform_state_bucket}}{% raw %} (DELETED)"
