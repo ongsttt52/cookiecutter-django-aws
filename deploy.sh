@@ -315,8 +315,14 @@ github_init() {
     repo_name=${input_name:-$repo_name}
   fi
 
-  log_info "Creating GitHub repository: $repo_name"
-  gh repo create "$repo_name" --private --source=. --remote=origin 2>&1
+  # EC2 All-in-One은 EC2에서 직접 git clone하므로 public 필요
+  local visibility="--private"
+  if [ "$AWS_DEPLOYMENT" = "ec2-all-in-one" ]; then
+    visibility="--public"
+  fi
+
+  log_info "Creating GitHub repository: $repo_name ($visibility)"
+  gh repo create "$repo_name" $visibility --source=. --remote=origin 2>&1
 
   # Set secrets
   log_info "Setting GitHub Secrets..."
@@ -336,7 +342,7 @@ github_init() {
 
   # EC2 SSH key
   if [ "$AWS_DEPLOYMENT" = "ec2-all-in-one" ]; then
-    local key_path="$HOME/.ssh/${PROJECT_SLUG///_/-}-ec2-key"
+    local key_path="$HOME/.ssh/${PROJECT_SLUG//_/-}-ec2-key"
     if [ ! -f "$key_path" ]; then
       ssh-keygen -t ed25519 -f "$key_path" -N "" -C "$PROJECT_SLUG-ec2"
       log_info "SSH key generated: $key_path"
