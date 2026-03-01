@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: true
+
 env:
   AWS_REGION: {% endraw %}{{cookiecutter.aws_region}}{% raw %}
   PROJECT_NAME: {% endraw %}{{ cookiecutter.project_slug | replace('_', '-') }}{% raw %}

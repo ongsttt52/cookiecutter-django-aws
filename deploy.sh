@@ -218,14 +218,14 @@ setup_env() {
   aws_secret=$(aws configure get aws_secret_access_key 2>/dev/null || echo "")
 
   if [ -n "$aws_key" ] && [ -n "$aws_secret" ]; then
-    # Replace placeholder values (use | delimiter to avoid conflicts with / in keys)
-    if [[ "$(uname)" == "Darwin" ]]; then
-      sed -i '' "s|your-aws-access-key-id|$aws_key|" .env
-      sed -i '' "s|your-aws-secret-access-key|$aws_secret|" .env
-    else
-      sed -i "s|your-aws-access-key-id|$aws_key|" .env
-      sed -i "s|your-aws-secret-access-key|$aws_secret|" .env
-    fi
+    # python3로 치환 (AWS Secret Key에 &, \, | 등 sed 특수문자가 포함될 수 있음)
+    python3 -c "
+import sys
+content = open('.env').read()
+content = content.replace('your-aws-access-key-id', sys.argv[1])
+content = content.replace('your-aws-secret-access-key', sys.argv[2])
+open('.env', 'w').write(content)
+" "$aws_key" "$aws_secret"
     log_success "AWS credentials auto-configured from AWS CLI profile"
   else
     log_warn "Could not auto-detect AWS credentials."
