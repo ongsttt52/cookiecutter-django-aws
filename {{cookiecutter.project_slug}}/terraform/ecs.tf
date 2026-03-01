@@ -81,6 +81,18 @@ resource "aws_ecs_task_definition" "backend" {
         {
           name  = "CORS_ALLOWED_ORIGINS"
           value = "http://${aws_lb.main.dns_name}"
+        },
+        {
+          name  = "DJANGO_SUPERUSER_EMAIL"
+          value = var.django_superuser_email
+        },
+        {
+          name  = "DJANGO_SUPERUSER_PASSWORD"
+          value = var.django_superuser_password
+        },
+        {
+          name  = "DJANGO_SUPERUSER_USERNAME"
+          value = "admin"
         }
       ]
 

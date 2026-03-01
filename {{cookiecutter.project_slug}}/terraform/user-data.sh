@@ -51,6 +51,10 @@ AWS_DEFAULT_REGION=${aws_region}
 POSTGRES_DB=${project_slug}
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=${db_password}
+
+DJANGO_SUPERUSER_EMAIL=${django_superuser_email}
+DJANGO_SUPERUSER_PASSWORD=${django_superuser_password}
+DJANGO_SUPERUSER_USERNAME=admin
 ENVEOF
 
 # 5. Write a marker for deploy script

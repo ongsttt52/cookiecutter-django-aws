@@ -53,6 +53,19 @@ variable "db_name" {
   default     = "{{cookiecutter.project_slug}}"
 }
 
+variable "django_superuser_email" {
+  description = "Django superuser email (auto-created on first deploy)"
+  type        = string
+  default     = "admin@example.com"
+}
+
+variable "django_superuser_password" {
+  description = "Django superuser password"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 {% if cookiecutter.aws_deployment == "ec2-all-in-one" %}
 # EC2 SSH Public Key
 variable "ec2_public_key" {

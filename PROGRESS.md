@@ -293,7 +293,7 @@ ALB (port 80)
 
 ## 현재 작업 중 🚧
 
-Phase 7 완료. Phase 8 이후 작업 선택 필요.
+Phase 9A 완료.
 
 ### Phase 8: EC2 All-in-One 배포 옵션 + deploy.sh (완료)
 
@@ -333,25 +333,41 @@ EC2 Instance (t3.small, ~$15/month)
 | EC2 All-in-One | ~$15 | 클라이언트 데모, 프로토타입 |
 | ECS Fargate | ~$60 | 프로덕션, 확장성 |
 
+### Phase 9A: S3 Presigned URL API + Superuser 자동 생성 (완료)
+
+**작업일**: 2026-02-28
+
+#### 작업 1: S3 Presigned URL API
+- [x] `backend/apps/files/` 앱 생성 (4개 파일)
+- [x] `POST /api/files/upload/` — S3 put_object presigned URL 생성
+- [x] `POST /api/files/download/` — S3 get_object presigned URL 생성
+- [x] JWT 인증 필수 (DEFAULT_PERMISSION_CLASSES 상속)
+- [x] 파일 확장자 화이트리스트 (이미지, 문서, 미디어, 압축 등 30종)
+- [x] 다운로드 소유권 검증 (`uploads/{user_id}/` prefix 체크)
+- [x] Swagger 문서화 (`@extend_schema`, tags=["files"])
+- [x] S3 클라이언트 전략: ECS(IAM Role) / Local·EC2(명시적 credentials)
+- [x] `settings.py` — INSTALLED_APPS, AWS_MAX_FILE_SIZE, SPECTACULAR_SETTINGS
+- [x] `urls.py` — `/api/files/` 라우팅 등록
+
+#### 작업 2: Superuser 자동 생성
+- [x] `entrypoint.sh` — DJANGO_SUPERUSER_EMAIL/PASSWORD 환경변수 기반 자동 생성
+- [x] Django 3.0+ `--noinput` + `DJANGO_SUPERUSER_PASSWORD` 공식 기능 활용
+- [x] 멱등성: 이미 존재하면 스킵 (`2>/dev/null || echo "...skipping"`)
+- [x] `.env.example` — superuser 변수 추가 (주석 상태)
+- [x] `variables.tf` — django_superuser_email/password 변수 추가
+- [x] `ecs.tf` — Backend container environment에 3개 변수 추가
+- [x] `ec2.tf` + `user-data.sh` — templatefile 변수 전달 + .env 추가
+- [x] `create-infra.yml` / `destroy.yml` — terraform `-var` 추가
+- [x] `Makefile` — init/setup-secrets에 DJANGO_SUPERUSER_PASSWORD 프롬프트
+
 ---
 
 ## 다음 단계
 
-**우선순위 1: S3 Presigned URL API 구현**
-- [ ] `backend/apps/files/` 앱 생성
-- [ ] Upload/Download presigned URL 엔드포인트
-- [ ] URL 라우팅 등록
-- [ ] E2E 테스트에서 S3 업로드/다운로드 검증
-
-**우선순위 2: CI 코드 품질 단계 추가**
+**우선순위 1: CI 코드 품질 단계 추가**
 - [ ] `deploy.yml`에 lint/test job 추가 (ruff check, black --check, pytest)
 - [ ] Health check 등 기본 테스트 코드 작성
 - [ ] 배포 전 품질 게이트 역할
-
-**우선순위 3: Superuser 자동 생성 스크립트**
-- [ ] `entrypoint.sh`에 환경변수 기반 superuser 생성 로직
-- [ ] `DJANGO_SUPERUSER_EMAIL`, `DJANGO_SUPERUSER_PASSWORD` 환경변수 활용
-- [ ] 첫 배포 시 Admin 즉시 접근 가능
 
 **우선순위 4: 템플릿 DX 개선**
 - [ ] `.env.example`에 AWS credentials 플레이스홀더 경고 문구 추가
