@@ -57,7 +57,29 @@ DJANGO_SUPERUSER_PASSWORD=${django_superuser_password}
 DJANGO_SUPERUSER_USERNAME=admin
 ENVEOF
 
-# 5. Write a marker for deploy script
+# 5. Register systemd service for auto-start on reboot
+echo ">>> Registering Docker Compose systemd service..."
+cat > /etc/systemd/system/app.service <<'EOF'
+[Unit]
+Description=Docker Compose App
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/app
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up -d
+ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable app.service
+
+# 6. Write a marker for deploy script
 echo "ready" > "$APP_DIR/.setup-complete"
 
 echo "=== User data script completed at $(date) ==="

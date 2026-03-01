@@ -1,4 +1,5 @@
 import logging
+import os
 import uuid
 
 import boto3
@@ -67,6 +68,14 @@ def upload_presigned_url(request):
     if not filename or not content_type:
         return Response(
             {"error": "filename and content_type are required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # 경로 구분자 제거 (S3 키 오염 방지)
+    filename = os.path.basename(filename)
+    if not filename:
+        return Response(
+            {"error": "Invalid filename."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 

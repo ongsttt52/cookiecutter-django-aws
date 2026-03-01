@@ -1,6 +1,6 @@
 # Django AWS Cookiecutter Template - 진행상황
 
-**마지막 업데이트:** 2026-02-27
+**마지막 업데이트:** 2026-03-01
 
 ---
 
@@ -293,7 +293,7 @@ ALB (port 80)
 
 ## 현재 작업 중 🚧
 
-Phase 9A 완료.
+Phase 9B 완료.
 
 ### Phase 8: EC2 All-in-One 배포 옵션 + deploy.sh (완료)
 
@@ -359,6 +359,36 @@ EC2 Instance (t3.small, ~$15/month)
 - [x] `ec2.tf` + `user-data.sh` — templatefile 변수 전달 + .env 추가
 - [x] `create-infra.yml` / `destroy.yml` — terraform `-var` 추가
 - [x] `Makefile` — init/setup-secrets에 DJANGO_SUPERUSER_PASSWORD 프롬프트
+
+### Phase 9B: dev HEAD 코드 리뷰 수정 (완료)
+
+**작업일**: 2026-03-01
+**코드 리뷰**: [`docs/reviews/2026-03-01-dev-head-code-review.md`](docs/reviews/2026-03-01-dev-head-code-review.md)
+
+dev HEAD (`1f51c4d`) 기준으로 소규모 스타트업 관점의 코드 리뷰를 수행하고, FIX 4건 + WARN 3건을 수정.
+
+#### FIX (배포 실패 또는 기능 깨짐)
+- [x] F1: `post_gen_project.py` — ECS/EC2 모드 전환 시 빈 Terraform 파일 잔류 → 사용하지 않는 .tf 파일 삭제 로직 추가
+- [x] F2: `user-data.sh` — EC2 재부팅 시 서비스 자동 시작 안 됨 → systemd 서비스 등록
+- [x] F3: `deploy.sh` — sed 치환이 AWS Secret Key의 특수문자(`&`, `\`)에서 실패 → python3 replace로 교체
+- [x] F4: `ec2_security.tf` — SSH 0.0.0.0/0 전역 개방 → `ssh_allowed_cidrs` 변수화 + `create-infra.yml`에서 현재 IP 자동 감지
+
+#### WARN (특정 조건에서 깨질 수 있음)
+- [x] W1: `files/views.py` — filename에 경로 구분자 포함 시 S3 키 오염 → `os.path.basename()` 추가
+- [x] W2: `entrypoint.sh` — superuser 생성 에러가 `2>/dev/null`로 무시됨 → `2>&1`로 변경
+- [x] W3: `deploy-ec2.yml` — 동시 실행 제어 없음 → `concurrency` 블록 추가
+
+**수정된 파일 (10개):**
+- `hooks/post_gen_project.py`
+- `deploy.sh`
+- `{{cookiecutter.project_slug}}/terraform/user-data.sh`
+- `{{cookiecutter.project_slug}}/terraform/variables.tf`
+- `{{cookiecutter.project_slug}}/terraform/ec2_security.tf`
+- `{{cookiecutter.project_slug}}/.github/workflows/create-infra.yml`
+- `{{cookiecutter.project_slug}}/.github/workflows/destroy.yml`
+- `{{cookiecutter.project_slug}}/.github/workflows/deploy-ec2.yml`
+- `{{cookiecutter.project_slug}}/backend/apps/files/views.py`
+- `{{cookiecutter.project_slug}}/backend/entrypoint.sh`
 
 ---
 

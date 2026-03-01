@@ -11,7 +11,7 @@ if [ -n "$DJANGO_SUPERUSER_EMAIL" ] && [ -n "$DJANGO_SUPERUSER_PASSWORD" ]; then
         --noinput \
         --email "$DJANGO_SUPERUSER_EMAIL" \
         --username "${DJANGO_SUPERUSER_USERNAME:-admin}" \
-        2>/dev/null || echo "Superuser already exists, skipping."
+        2>&1 || echo "Superuser creation skipped (may already exist)."
 fi
 
 echo "Collecting static files..."
