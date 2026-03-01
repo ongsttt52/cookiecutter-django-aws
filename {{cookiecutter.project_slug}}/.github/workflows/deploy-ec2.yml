@@ -55,7 +55,6 @@ jobs:
           host: ${{ steps.ec2.outputs.ip }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          script_stop: true
           script: |
             set -e
             APP_DIR="/opt/app"
@@ -64,14 +63,17 @@ jobs:
             echo ">>> Deploying to EC2..."
 
             # Clone or pull
-            if [ -d "$APP_DIR/.git" ]; then
+            HAS_GIT=$(sudo test -d "$APP_DIR/.git" && echo "yes" || echo "no")
+            if [ "$HAS_GIT" = "yes" ]; then
               echo ">>> Pulling latest code..."
               cd "$APP_DIR"
               sudo git fetch origin main
               sudo git reset --hard origin/main
             else
               echo ">>> Cloning repository..."
-              sudo git clone "$REPO_URL" "$APP_DIR"
+              sudo git clone "$REPO_URL" /tmp/app-repo
+              sudo cp -a /tmp/app-repo/. "$APP_DIR"/
+              sudo rm -rf /tmp/app-repo
               cd "$APP_DIR"
             fi
 

@@ -99,14 +99,6 @@ jobs:
         working-directory: terraform
         run: terraform init
 
-{% endraw %}{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
-      - name: Detect current IP for SSH access
-        id: myip
-        run: |
-          MY_IP=$(curl -s --retry 3 https://ifconfig.me)/32
-          echo "cidr=$MY_IP" >> $GITHUB_OUTPUT
-          echo "SSH allowed CIDR: $MY_IP"
-{% endraw %}{% endif %}{% raw %}
       - name: Terraform Plan
         working-directory: terraform
         run: |
@@ -118,8 +110,7 @@ jobs:
             -var="django_superuser_email=admin@example.com" \
             -var="django_superuser_password=${{ secrets.DJANGO_SUPERUSER_PASSWORD }}" \{% endraw %}
 {%- if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
-            -var="ec2_public_key=${{ secrets.EC2_SSH_PUBLIC_KEY }}" \
-            -var='ssh_allowed_cidrs=["${{ steps.myip.outputs.cidr }}"]' \{% endraw %}
+            -var="ec2_public_key=${{ secrets.EC2_SSH_PUBLIC_KEY }}" \{% endraw %}
 {%- endif %}{% raw %}
             -out=tfplan
 

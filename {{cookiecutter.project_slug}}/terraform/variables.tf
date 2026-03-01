@@ -73,11 +73,6 @@ variable "ec2_public_key" {
   type        = string
 }
 
-variable "ssh_allowed_cidrs" {
-  description = "SSH 접근을 허용할 CIDR 블록 목록 (배포 시 현재 IP가 자동 감지됨)"
-  type        = list(string)
-  default     = ["0.0.0.0/0"]
-}
 {% endif %}
 
 # 인스턴스 크기 (환경별 자동 선택)

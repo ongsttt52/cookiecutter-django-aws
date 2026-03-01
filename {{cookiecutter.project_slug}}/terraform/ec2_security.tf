@@ -8,12 +8,12 @@ resource "aws_security_group" "ec2" {
   description = "Security group for EC2 All-in-One instance"
   vpc_id      = aws_vpc.main.id
 
-  # SSH (배포 시 현재 IP로 자동 제한됨)
+  # SSH
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = var.ssh_allowed_cidrs
+    cidr_blocks = ["0.0.0.0/0"]
     description = "SSH access"
   }
 

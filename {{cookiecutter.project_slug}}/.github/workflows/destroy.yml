@@ -62,8 +62,7 @@ jobs:
             -var="django_superuser_email=admin@example.com" \
             -var="django_superuser_password=${{ secrets.DJANGO_SUPERUSER_PASSWORD }}" \{% endraw %}
 {%- if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
-            -var="ec2_public_key=${{ secrets.EC2_SSH_PUBLIC_KEY }}" \
-            -var='ssh_allowed_cidrs=["0.0.0.0/0"]' \{% endraw %}
+            -var="ec2_public_key=${{ secrets.EC2_SSH_PUBLIC_KEY }}" \{% endraw %}
 {%- endif %}{% raw %}
             -auto-approve
 
