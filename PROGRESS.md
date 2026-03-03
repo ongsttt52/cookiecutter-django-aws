@@ -1,6 +1,6 @@
 # Django AWS Cookiecutter Template - 진행상황
 
-**마지막 업데이트:** 2026-03-01
+**마지막 업데이트:** 2026-03-03
 
 ---
 
@@ -293,7 +293,7 @@ ALB (port 80)
 
 ## 현재 작업 중 🚧
 
-Phase 9B 완료.
+Phase 10 완료.
 
 ### Phase 8: EC2 All-in-One 배포 옵션 + deploy.sh (완료)
 
@@ -390,14 +390,68 @@ dev HEAD (`1f51c4d`) 기준으로 소규모 스타트업 관점의 코드 리뷰
 - `{{cookiecutter.project_slug}}/backend/apps/files/views.py`
 - `{{cookiecutter.project_slug}}/backend/entrypoint.sh`
 
+### Phase 10: CI 코드 품질 + 테스트 인프라 (완료)
+
+**작업일**: 2026-03-03
+
+pyproject.toml에 선언된 pytest, ruff, black 등 도구를 실제로 활용하여 테스트 코드를 작성하고, 배포 전 자동 품질 게이트를 추가.
+
+#### 작업 1: pytest 공통 fixture (conftest.py)
+- [x] `backend/conftest.py` 생성
+- [x] `user` fixture — `get_user_model()` 테스트 유저 생성
+- [x] `api_client` fixture — DRF APIClient 인스턴스
+- [x] `authenticated_client` fixture — `force_authenticate` 적용 클라이언트
+
+#### 작업 2: Health Check 테스트 (3건)
+- [x] `apps/core/tests/test_views.py` 생성
+- [x] 정상 DB 연결 → 200 + healthy 응답
+- [x] DB 연결 실패 (mock) → 503 + unhealthy 응답
+- [x] AllowAny 퍼미션으로 인증 없이 접근 가능
+
+#### 작업 3: Files API 테스트 (16건)
+- [x] `apps/files/tests/test_views.py` 생성
+- [x] Upload Presigned URL 테스트 7건 (정상, 누락, 확장자, path traversal, 미인증, S3 에러)
+- [x] Download Presigned URL 테스트 5건 (정상, 누락, 권한, 미인증, S3 에러)
+- [x] `_get_extension` 헬퍼 테스트 4건 (일반, 이중, 없음, 대소문자)
+- [x] Mock 전략: `_get_s3_client` patch로 실제 AWS 호출 없음
+
+#### 작업 4: deploy.yml quality job
+- [x] `quality` job 추가 (check-infrastructure와 병렬)
+- [x] PostgreSQL 16 서비스 컨테이너
+- [x] ruff check → black --check → pytest 순서 실행
+- [x] `build-backend`, `build-frontend`의 needs에 quality 추가
+- [x] quality 실패 시 빌드/배포 중단
+
+#### 작업 5: deploy-ec2.yml quality job
+- [x] deploy.yml과 동일한 quality job 추가
+- [x] deploy job의 needs에 quality 추가
+
+**수정/생성 파일 (7개):**
+- `backend/conftest.py` (신규)
+- `backend/apps/core/tests/__init__.py` (신규)
+- `backend/apps/core/tests/test_views.py` (신규)
+- `backend/apps/files/tests/__init__.py` (신규)
+- `backend/apps/files/tests/test_views.py` (신규)
+- `.github/workflows/deploy.yml` (수정)
+- `.github/workflows/deploy-ec2.yml` (수정)
+
+**CI 파이프라인 구조:**
+```
+# ECS Fargate (deploy.yml)
+quality ──────────────┐
+                      ├──→ build-backend ──┐
+check-infrastructure ─┤                    ├──→ deploy ──→ health-check
+                      ├──→ build-frontend ─┘
+                      │    (use_frontend=yes)
+                      └────────────────────────
+
+# EC2 (deploy-ec2.yml)
+quality ──→ deploy ──→ health-check
+```
+
 ---
 
 ## 다음 단계
-
-**우선순위 1: CI 코드 품질 단계 추가**
-- [ ] `deploy.yml`에 lint/test job 추가 (ruff check, black --check, pytest)
-- [ ] Health check 등 기본 테스트 코드 작성
-- [ ] 배포 전 품질 게이트 역할
 
 **우선순위 4: 템플릿 DX 개선**
 - [ ] `.env.example`에 AWS credentials 플레이스홀더 경고 문구 추가
