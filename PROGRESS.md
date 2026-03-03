@@ -293,7 +293,52 @@ ALB (port 80)
 
 ## 현재 작업 중 🚧
 
-Phase 10 완료.
+Phase 11 완료.
+
+### Phase 11: infra-only.sh + 공통 함수 추출 (완료)
+
+**작업일**: 2026-03-03
+
+기존 프로젝트에 AWS 인프라만 생성하는 `infra-only.sh` 스크립트 추가. `deploy.sh`에서 공통 함수를 `lib/common.sh`로 추출하여 코드 재사용.
+
+#### 작업 1: lib/common.sh — 공통 함수 추출
+- [x] `lib/common.sh` 생성
+- [x] 로그 유틸리티 5개 (log_info/success/warn/error/step) + 색상 변수
+- [x] `ensure_state_bucket`: Terraform state S3 버킷 생성/확인
+- [x] `trigger_and_wait_workflow`: GitHub Actions 워크플로우 트리거 + 대기
+- [x] `verify_endpoint`: /api/health/ 헬스체크
+
+#### 작업 2: deploy.sh 리팩토링
+- [x] 상단에 `source "$SCRIPT_DIR/lib/common.sh"` 추가
+- [x] 추출된 함수 정의 제거 (192줄 삭감)
+- [x] `verify_endpoint` → `do_verify_endpoint` 래퍼로 변경 (URL 탐색은 deploy.sh 전용)
+- [x] 동작은 완전히 동일하게 유지 (`deploy.sh --help` 검증)
+
+#### 작업 3: infra-only.sh 작성
+- [x] Step 0: Prerequisites Check (aws, gh, git — cookiecutter/docker 불필요)
+- [x] Step 1: Makefile 파싱으로 PROJECT_SLUG, AWS_REGION, TF_STATE_BUCKET 자동 감지
+- [x] Step 1: terraform/ecs.tf / ec2.tf 존재 여부로 배포 모드 자동 판별
+- [x] Step 2: GitHub repo 존재, Secrets 검증, terraform/ 디렉토리 확인
+- [x] Step 2: terraform/ 로컬 변경 미push 시 경고
+- [x] Step 2: EC2 모드는 SSH 키 Secrets 추가 확인
+- [x] Step 3: Terraform state 버킷 생성 (lib/common.sh 공유)
+- [x] Step 4: create-infra.yml 트리거 + 대기
+- [x] Step 5: (선택) 앱 배포 — --skip-deploy로 스킵 가능
+- [x] Step 6: /api/health/ 엔드포인트 검증
+- [x] Step 7: Summary 출력
+
+**수정/생성 파일 (3개):**
+- `lib/common.sh` (신규)
+- `infra-only.sh` (신규)
+- `deploy.sh` (수정 — 공통 함수를 source로 대체)
+
+**사용법:**
+```bash
+cd /path/to/my_rendered_project
+/path/to/cookiecutter-django-aws/infra-only.sh
+/path/to/cookiecutter-django-aws/infra-only.sh --skip-deploy   # 인프라만
+/path/to/cookiecutter-django-aws/infra-only.sh --no-input      # 비대화 모드
+```
 
 ### Phase 8: EC2 All-in-One 배포 옵션 + deploy.sh (완료)
 
