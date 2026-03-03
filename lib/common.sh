@@ -82,9 +82,13 @@ ensure_state_bucket() {
     log_warn "Bucket name '$bucket_name' is not available (already taken by another AWS account)."
     read -rp "Enter a different bucket name (or Ctrl+C to cancel): " bucket_name
 
-    # 빈 입력 방지
+    # S3 버킷명 규칙 검증: 영소문자, 숫자, 하이픈, 점만 허용 (3~63자)
     if [ -z "$bucket_name" ]; then
       log_error "Bucket name cannot be empty."
+      continue
+    fi
+    if ! [[ "$bucket_name" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]; then
+      log_error "Invalid bucket name. Only lowercase letters, numbers, hyphens, and dots are allowed (3-63 chars)."
       continue
     fi
   done

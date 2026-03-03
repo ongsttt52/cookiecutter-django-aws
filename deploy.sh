@@ -408,7 +408,7 @@ do_verify_endpoint() {
       # Try to get output (may fail if state is remote-only)
       app_url=$(terraform output -raw app_url 2>/dev/null || echo "")
     fi
-    cd ..
+    cd "$PROJECT_DIR"
   fi
 
   if [ -z "$app_url" ]; then

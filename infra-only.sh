@@ -114,8 +114,18 @@ detect_project_config() {
     log_error "Could not parse PROJECT_NAME from Makefile."
     exit 1
   fi
+  # 허용 문자 검증: cookiecutter가 생성하는 slug는 영소문자, 숫자, 언더스코어만 포함
+  if ! [[ "$PROJECT_SLUG" =~ ^[a-z0-9_]+$ ]]; then
+    log_error "Invalid PROJECT_NAME in Makefile: $PROJECT_SLUG"
+    log_error "Expected only lowercase letters, numbers, and underscores."
+    exit 1
+  fi
   if [ -z "$AWS_REGION" ]; then
     log_error "Could not parse AWS_REGION from Makefile."
+    exit 1
+  fi
+  if ! [[ "$AWS_REGION" =~ ^[a-z]{2}-[a-z]+-[0-9]+$ ]]; then
+    log_error "Invalid AWS_REGION in Makefile: $AWS_REGION"
     exit 1
   fi
 
@@ -155,10 +165,12 @@ validate_project() {
     errors=$((errors + 1))
   fi
 
-  # GitHub remote 확인
+  # GitHub remote 확인 — PROJECT_DIR 기준으로 조회
   REPO_FULL_NAME=""
   if git -C "$PROJECT_DIR" remote get-url origin >/dev/null 2>&1; then
-    REPO_FULL_NAME=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || echo "")
+    local remote_url
+    remote_url=$(git -C "$PROJECT_DIR" remote get-url origin)
+    REPO_FULL_NAME=$(gh repo view "$remote_url" --json nameWithOwner --jq .nameWithOwner 2>/dev/null || echo "")
   fi
 
   if [ -z "$REPO_FULL_NAME" ]; then
