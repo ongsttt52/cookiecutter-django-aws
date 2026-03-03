@@ -205,6 +205,20 @@ setup-secrets:
 	echo ""; \
 	gh secret set DJANGO_SUPERUSER_PASSWORD --body "$$SU_PASS" && \
 	echo "  ✓ DJANGO_SUPERUSER_PASSWORD set"
+{% if cookiecutter.aws_deployment == "ec2-all-in-one" %}
+	@echo ""
+	@echo "🔑 Setting EC2 SSH key pair..."
+	@KEY_PATH=~/.ssh/$(PROJECT_NAME_NORMALIZED)-ec2-key; \
+	if [ ! -f "$$KEY_PATH" ]; then \
+		ssh-keygen -t ed25519 -f "$$KEY_PATH" -N "" -C "$(PROJECT_NAME)-ec2"; \
+		echo "  ✓ SSH key generated: $$KEY_PATH"; \
+	else \
+		echo "  ✓ SSH key already exists: $$KEY_PATH"; \
+	fi; \
+	gh secret set EC2_SSH_PRIVATE_KEY < "$$KEY_PATH" && \
+	gh secret set EC2_SSH_PUBLIC_KEY --body "$$(cat $$KEY_PATH.pub)" && \
+	echo "  ✓ SSH keys saved to GitHub Secrets"
+{% endif %}
 	@echo ""
 	@echo "✅ Secrets configured!"
 	@echo ""
