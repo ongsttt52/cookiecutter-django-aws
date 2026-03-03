@@ -56,11 +56,69 @@ jobs:
             echo "Skipping deployment..."
           fi
 
+  # Job 0.5: 코드 품질 검사 (lint + format + test)
+  quality:
+    name: Code Quality & Tests
+    runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      SECRET_KEY: test-secret-key-for-ci-only
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
+      ALLOWED_HOSTS: "*"
+      DEBUG: "1"
+      ENVIRONMENT: test
+      AWS_STORAGE_BUCKET_NAME: test-bucket
+      AWS_ACCESS_KEY_ID: ""
+      AWS_SECRET_ACCESS_KEY: ""
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "{% endraw %}{{cookiecutter.python_version}}{% raw %}"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --extra dev
+
+      - name: Lint (ruff)
+        working-directory: backend
+        run: uv run ruff check .
+
+      - name: Format check (black)
+        working-directory: backend
+        run: uv run black --check .
+
+      - name: Run tests (pytest)
+        working-directory: backend
+        run: uv run pytest --no-cov -q
+
   # Job 1: Backend Docker 이미지 빌드 & ECR 푸시
   build-backend:
     name: Build and Push Backend Image
     runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}
-    needs: check-infrastructure
+    needs: [check-infrastructure, quality]
     if: needs.check-infrastructure.outputs.exists == 'true'
     outputs:
       image_tag: ${{ steps.meta.outputs.tags }}
@@ -116,7 +174,7 @@ jobs:
   build-frontend:
     name: Build and Push Frontend Image
     runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}
-    needs: check-infrastructure
+    needs: [check-infrastructure, quality]
     if: needs.check-infrastructure.outputs.exists == 'true'
     outputs:
       image_tag: ${{ steps.meta.outputs.tags }}
