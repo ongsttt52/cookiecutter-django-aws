@@ -153,6 +153,20 @@ collect_inputs() {
   # Derive project slug
   PROJECT_SLUG=$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '_' | tr '-' '_')
 
+  # Terraform variables.tf에서 project_name <= 18자 제한 (ALB/TG 32-char limit)
+  local max_len=18
+  if [ ${#PROJECT_SLUG} -gt $max_len ]; then
+    log_error "Project slug '$PROJECT_SLUG' is ${#PROJECT_SLUG} characters (max $max_len)."
+    log_error "AWS resource names (ALB, Target Group) have a 32-char limit."
+    log_error "Please choose a shorter project name."
+    if [ "$NO_INPUT" = true ]; then
+      exit 1
+    fi
+    echo ""
+    collect_inputs  # 재입력
+    return
+  fi
+
   echo ""
   log_info "Configuration summary:"
   echo "  Project:    $PROJECT_NAME ($PROJECT_SLUG)"

@@ -72,7 +72,8 @@ resource "aws_ecs_task_definition" "backend" {
         },
         {
           name  = "ALLOWED_HOSTS"
-          value = aws_lb.main.dns_name
+          # ALB DNS + 와일드카드: ALB 헬스체크는 타겟 IP를 Host 헤더로 보내므로 * 필요
+          value = "${aws_lb.main.dns_name},*"
         },
         {
           name  = "SECRET_KEY"
