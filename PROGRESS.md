@@ -1,6 +1,6 @@
 # Django AWS Cookiecutter Template - 진행상황
 
-**마지막 업데이트:** 2026-03-03
+**마지막 업데이트:** 2026-03-07
 
 ---
 
@@ -293,7 +293,8 @@ ALB (port 80)
 
 ## 현재 작업 중 🚧
 
-Phase 12 완료.
+Phase 12 완료. `infra_test` 더미 프로젝트로 E2E 검증 완료 (ECS Fargate 배포 성공).
+다음 작업: Phase A (인프라/배포 레이어를 언어에서 분리).
 
 ### Phase 12: infra-only.sh — 비-cookiecutter 프로젝트 지원 확장 (완료)
 
@@ -536,46 +537,127 @@ quality ──→ deploy ──→ health-check
 
 ---
 
-## 다음 단계
+## 향후 로드맵 🗺️
 
-**우선순위 4: 템플릿 DX 개선**
-- [ ] `.env.example`에 AWS credentials 플레이스홀더 경고 문구 추가
-- [ ] `make init` 실행 전 `.env` 유효성 검사 강화 (플레이스홀더 감지)
-- [ ] `terraform_state_bucket` 값을 cookiecutter.json 변수로 분리
+### 궁극적 목표
 
-**우선순위 5: 추가 기능 (선택)**
-- [x] EC2 All-in-One 배포 옵션 추가 (Phase 8에서 완료)
-- [ ] CloudWatch 로그 필터 설정
-- [ ] 최소 케이스(backend only) AWS E2E 배포 테스트
+1. 자바/파이썬 환경에서 기존 배포 여부, 인프라 파일 존재 여부에 관계 없이 **스크립트 실행만으로 통일된 AWS 리소스 & 배포 파이프라인 구축**
+2. 쿠키커터 템플릿에 **백엔드 스택 선택 옵션** 추가 (Django, FastAPI, Spring Boot 등)
+3. **프론트엔드 대시보드**로 UX 향상, 배포된 프로젝트 통계 데이터 관리
+
+### Phase A: 인프라/배포 레이어를 언어에서 분리 (최우선)
+
+> 나머지 Phase 전부의 기반. deploy.yml과 ecs.tf에서 Django 의존성을 분리하지 않으면, 스택을 추가할 때마다 별도 terraform 파일을 관리해야 함.
+
+**현재 문제:** deploy.yml에 Django lint/test가 하드코딩, ecs.tf에 Django 환경변수(DATABASE_URL, SECRET_KEY 등)가 고정
+
+- [ ] **A-1. deploy.yml 분리**
+  - `ci.yml` (lint/test — 스택별 분기) + `build.yml` (Docker build → ECR push — 공통) + `deploy.yml` (ECS/EC2 배포 — 공통)
+  - build/deploy는 "Dockerfile 기반"이므로 언어 무관
+  - ci만 스택별로 다르면 됨
+- [ ] **A-2. ECS 태스크 정의에서 Django 환경변수 분리**
+  - 공통 변수(PORT, ENVIRONMENT) + 스택별 변수를 `app_env.auto.tfvars`로 분리
+  - `ecs.tf`는 `concat(local.common_env, var.app_env_vars)` 형태로 동적 구성
+  - cookiecutter 렌더링 시 `backend_stack` 값에 따라 적절한 tfvars 생성
+- [ ] **A-3. 헬스체크 경로 변수화**
+  - ALB 헬스체크 `/api/health/` 하드코딩 → `variables.tf`의 `health_check_path` 변수로 이동
+  - Spring Boot는 `/actuator/health`, FastAPI는 `/health` 등 스택에 따라 설정 가능
+
+**결과물:**
+```
+deploy.yml (공통)         ← build + deploy만 남김
+├── build job: docker build backend/
+└── deploy job: ecs update-service
+
+ci-django.yml (스택 전용) ← Django 코드가 여기로 이동
+└── uv sync → ruff → black → pytest
+
+ecs.tf (공통)             ← 공통 환경변수만 남김
+└── environment = concat(local.common_env, var.app_env_vars)
+
+app_env.auto.tfvars       ← 스택별 환경변수 (cookiecutter가 생성)
+└── DATABASE_URL, SECRET_KEY, CELERY_BROKER_URL ...
+```
 
 ---
 
-## 다음 작업 계획 📋
+### Phase B: 백엔드 스택 선택 옵션
 
-### 작업 1: EC2 배포 옵션 추가 (선택 사항)
+> Phase A 위에서 스택별 backend/ 템플릿과 CI 파일을 추가
 
-**배경:**
-- ECS Fargate: 24/7 운영 시 비용이 높음 (~$9/task/월)
-- EC2 All-in-One: 모든 컨테이너를 하나의 EC2에서 실행 (~$7/월 전체)
-- 데모 환경에서 극한의 비용 절감 가능
+- [ ] **B-1. cookiecutter.json 확장**
+  - `backend_stack` 선택 옵션 추가: `["django", "fastapi", "spring-boot"]`
+  - `backend_port`, `health_check_path` 변수 추가
+  - `post_gen_project.py`에서 선택하지 않은 스택의 backend/ 삭제
+- [ ] **B-2. 스택별 backend/ 템플릿**
+  - `backend-django/` → `use_backend=django`일 때 `backend/`으로 rename
+  - `backend-fastapi/` → FastAPI 기본 구조 (uvicorn, Dockerfile, 헬스체크)
+  - `backend-spring-boot/` → Spring Boot 기본 구조 (Gradle, Dockerfile, actuator)
+  - 각 스택에 Dockerfile, entrypoint, 헬스체크 엔드포인트 포함
+- [ ] **B-3. 스택별 CI 워크플로우**
+  - `ci-django.yml` — uv sync, ruff, black, pytest
+  - `ci-fastapi.yml` — uv sync, ruff, pytest
+  - `ci-spring.yml` — ./gradlew check test
+  - deploy.yml이 `workflow_call`로 해당 스택의 ci를 호출
 
-**계획:**
-```json
-// cookiecutter.json
-{
-  "aws_deployment": ["ecs-fargate", "ec2-all-in-one"]
-}
+---
+
+### Phase C: infra-only.sh 범용화
+
+> Phase B의 결과물을 기존 프로젝트(Java, Python 등)에 적용
+
+- [ ] **C-1. 자동 스택 감지**
+  - `backend/pyproject.toml`에서 Django/FastAPI 감지
+  - `backend/build.gradle*` 또는 `backend/pom.xml`에서 Spring Boot 감지
+  - 감지 실패 시 프롬프트로 선택
+- [ ] **C-2. 렌더링 시 감지된 스택 전달**
+  - `cookiecutter --no-input backend_stack="$DETECTED_STACK" health_check_path="$HEALTH_PATH" ...`
+  - 인프라 파일만 복사하되, 스택에 맞는 ci.yml과 ecs.tf 환경변수가 생성됨
+- [ ] **C-3. 기존 Dockerfile 보존 옵션**
+  - 사용자 프로젝트에 이미 Dockerfile이 있으면 덮어쓰지 않는 옵션 추가
+
+---
+
+### Phase D: 프론트엔드 대시보드
+
+> 운영 단계. 급하지 않음
+
+- [ ] **D-1. CLI 리포트 (최소 MVP)**
+  - `infra-only.sh --status`로 현재 배포 상태 조회
+  - Terraform output + ECS 상태 + ALB 헬스체크 결과
+- [ ] **D-2. 웹 대시보드**
+  - 배포된 프로젝트 목록 (S3 state 버킷 기반)
+  - 프로젝트별 상태 (ECS running/stopped, 마지막 배포 시간)
+  - 비용 추정 (Cost Explorer API)
+  - 원클릭 생성/삭제
+  - 기술 스택: Next.js + AWS Lambda(API) + DynamoDB(메타데이터)
+  - 인증: GitHub OAuth (기존 gh CLI 연동)
+- [ ] **D-3. 프로젝트 메타데이터 수집**
+  - `infra-only.sh` 실행 시 DynamoDB에 프로젝트 정보 기록
+  - GitHub Actions 완료 시 webhook으로 배포 결과 전송
+
+---
+
+### Phase 의존성
+
+```
+Phase A (인프라/앱 분리)     ← 모든 Phase의 기반
+  ↓
+Phase B (멀티 스택 템플릿)   ← A 위에서 스택 추가
+  ↓
+Phase C (infra-only 범용화)  ← B의 결과물을 기존 프로젝트에 적용
+  ↓
+Phase D (대시보드)           ← 운영 단계
 ```
 
-**필요한 작업:**
-- [ ] ec2-all-in-one Terraform 템플릿 작성
-- [ ] docker-compose를 EC2에서 실행하는 user-data 스크립트
-- [ ] GitHub Actions 워크플로우 수정
+---
 
-**주의사항:**
-- Django 코드는 동일하게 유지
-- 인프라 설정만 변경
-- 프로덕션 전환 시 ECS로 쉽게 전환 가능
+### 기타 개선 사항 (우선순위 낮음)
+
+- [ ] `.env.example`에 AWS credentials 플레이스홀더 경고 문구 추가
+- [ ] `make init` 실행 전 `.env` 유효성 검사 강화 (플레이스홀더 감지)
+- [ ] `terraform_state_bucket` 값을 cookiecutter.json 변수로 분리
+- [ ] CloudWatch 로그 필터 설정
 
 ---
 
