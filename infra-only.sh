@@ -126,75 +126,78 @@ collect_infra_inputs() {
   local default_name
   default_name=$(echo "$dir_name" | tr '[:upper:]' '[:lower:]' | tr ' ' '_' | tr '-' '_')
 
-  if [ "$NO_INPUT" = true ]; then
-    PROJECT_NAME="$default_name"
-    AWS_DEPLOYMENT="ecs-fargate"
-    AWS_REGION="ap-northeast-2"
-    USE_FRONTEND="no"
-    USE_CELERY="no"
-    USE_WEBSOCKET="no"
-    GITHUB_RUNNER="ubuntu-latest"
-    log_info "Using default values (--no-input)"
-  else
-    read -rp "Project name [$default_name]: " PROJECT_NAME
-    PROJECT_NAME=${PROJECT_NAME:-$default_name}
-
-    echo ""
-    echo "Deployment options:"
-    echo "  1) ecs-fargate    — Production-grade, ~\$60/month"
-    echo "  2) ec2-all-in-one — Cost-effective demo, ~\$15/month"
-    read -rp "Deployment mode [1]: " DEPLOY_CHOICE
-    case "${DEPLOY_CHOICE:-1}" in
-      1) AWS_DEPLOYMENT="ecs-fargate" ;;
-      2) AWS_DEPLOYMENT="ec2-all-in-one" ;;
-      *) AWS_DEPLOYMENT="ecs-fargate" ;;
-    esac
-
-    read -rp "AWS Region [ap-northeast-2]: " AWS_REGION
-    AWS_REGION=${AWS_REGION:-ap-northeast-2}
-
-    read -rp "Use Frontend (Next.js)? (yes/no) [no]: " USE_FRONTEND
-    USE_FRONTEND=${USE_FRONTEND:-no}
-
-    read -rp "Use Celery? (yes/no) [no]: " USE_CELERY
-    USE_CELERY=${USE_CELERY:-no}
-
-    read -rp "Use WebSocket? (yes/no) [no]: " USE_WEBSOCKET
-    USE_WEBSOCKET=${USE_WEBSOCKET:-no}
-
-    read -rp "GitHub Runner [ubuntu-latest]: " GITHUB_RUNNER
-    GITHUB_RUNNER=${GITHUB_RUNNER:-ubuntu-latest}
-  fi
-
-  # slug 생성
-  PROJECT_SLUG=$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '_' | tr '-' '_')
-
-  # slug 형식 검증
-  if ! [[ "$PROJECT_SLUG" =~ ^[a-z0-9_]+$ ]]; then
-    log_error "Invalid project name: $PROJECT_SLUG"
-    log_error "Only lowercase letters, numbers, and underscores are allowed."
-    exit 1
-  fi
-
-  # 18자 길이 제한 (ALB/TG 32-char limit 대응)
-  local max_len=18
-  if [ ${#PROJECT_SLUG} -gt $max_len ]; then
-    log_error "Project slug '$PROJECT_SLUG' is ${#PROJECT_SLUG} characters (max $max_len)."
-    log_error "AWS resource names (ALB, Target Group) have a 32-char limit."
-    log_error "Please choose a shorter project name."
+  while true; do
     if [ "$NO_INPUT" = true ]; then
+      PROJECT_NAME="$default_name"
+      AWS_DEPLOYMENT="ecs-fargate"
+      AWS_REGION="ap-northeast-2"
+      USE_FRONTEND="no"
+      USE_CELERY="no"
+      USE_WEBSOCKET="no"
+      GITHUB_RUNNER="ubuntu-latest"
+      log_info "Using default values (--no-input)"
+    else
+      read -rp "Project name [$default_name]: " PROJECT_NAME
+      PROJECT_NAME=${PROJECT_NAME:-$default_name}
+
+      echo ""
+      echo "Deployment options:"
+      echo "  1) ecs-fargate    — Production-grade, ~\$60/month"
+      echo "  2) ec2-all-in-one — Cost-effective demo, ~\$15/month"
+      read -rp "Deployment mode [1]: " DEPLOY_CHOICE
+      case "${DEPLOY_CHOICE:-1}" in
+        1) AWS_DEPLOYMENT="ecs-fargate" ;;
+        2) AWS_DEPLOYMENT="ec2-all-in-one" ;;
+        *) AWS_DEPLOYMENT="ecs-fargate" ;;
+      esac
+
+      read -rp "AWS Region [ap-northeast-2]: " AWS_REGION
+      AWS_REGION=${AWS_REGION:-ap-northeast-2}
+
+      read -rp "Use Frontend (Next.js)? (yes/no) [no]: " USE_FRONTEND
+      USE_FRONTEND=${USE_FRONTEND:-no}
+
+      read -rp "Use Celery? (yes/no) [no]: " USE_CELERY
+      USE_CELERY=${USE_CELERY:-no}
+
+      read -rp "Use WebSocket? (yes/no) [no]: " USE_WEBSOCKET
+      USE_WEBSOCKET=${USE_WEBSOCKET:-no}
+
+      read -rp "GitHub Runner [ubuntu-latest]: " GITHUB_RUNNER
+      GITHUB_RUNNER=${GITHUB_RUNNER:-ubuntu-latest}
+    fi
+
+    # slug 생성
+    PROJECT_SLUG=$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '_' | tr '-' '_')
+
+    # slug 형식 검증
+    if ! [[ "$PROJECT_SLUG" =~ ^[a-z0-9_]+$ ]]; then
+      log_error "Invalid project name: $PROJECT_SLUG"
+      log_error "Only lowercase letters, numbers, and underscores are allowed."
       exit 1
     fi
-    echo ""
-    collect_infra_inputs  # 재입력
-    return
-  fi
 
-  # AWS 리전 형식 검증
-  if ! [[ "$AWS_REGION" =~ ^[a-z]{2}-[a-z]+-[0-9]+$ ]]; then
-    log_error "Invalid AWS region: $AWS_REGION"
-    exit 1
-  fi
+    # 18자 길이 제한 (ALB/TG 32-char limit 대응)
+    local max_len=18
+    if [ ${#PROJECT_SLUG} -gt $max_len ]; then
+      log_error "Project slug '$PROJECT_SLUG' is ${#PROJECT_SLUG} characters (max $max_len)."
+      log_error "AWS resource names (ALB, Target Group) have a 32-char limit."
+      log_error "Please choose a shorter project name."
+      if [ "$NO_INPUT" = true ]; then
+        exit 1
+      fi
+      echo ""
+      continue
+    fi
+
+    # AWS 리전 형식 검증
+    if ! [[ "$AWS_REGION" =~ ^[a-z]{2}-[a-z]+-[0-9]+$ ]]; then
+      log_error "Invalid AWS region: $AWS_REGION"
+      exit 1
+    fi
+
+    break
+  done
 
   # DEPLOY_MODE 설정 (다른 함수에서 사용)
   DEPLOY_MODE="$AWS_DEPLOYMENT"
@@ -228,31 +231,9 @@ render_and_extract() {
   local timestamp
   timestamp=$(date +%Y%m%d_%H%M%S)
 
-  # --- 2a. 기존 인프라 파일 백업 ---
-  log_info "Backing up existing infrastructure files..."
-
-  if [ -f "$PROJECT_DIR/Makefile" ]; then
-    cp "$PROJECT_DIR/Makefile" "$PROJECT_DIR/Makefile.bak"
-    log_info "  Makefile -> Makefile.bak"
-  fi
-
-  if [ -d "$PROJECT_DIR/terraform" ]; then
-    mv "$PROJECT_DIR/terraform" "$PROJECT_DIR/terraform.bak.${timestamp}"
-    log_info "  terraform/ -> terraform.bak.${timestamp}/"
-  fi
-
-  local workflow_dir="$PROJECT_DIR/.github/workflows"
-  if [ -d "$workflow_dir" ]; then
-    for wf in create-infra.yml destroy.yml deploy.yml deploy-ec2.yml; do
-      if [ -f "$workflow_dir/$wf" ]; then
-        cp "$workflow_dir/$wf" "$workflow_dir/${wf}.bak"
-        log_info "  .github/workflows/$wf -> ${wf}.bak"
-      fi
-    done
-  fi
-
-  # --- 2b. cookiecutter 렌더링 ---
+  # --- 2a. cookiecutter 렌더링 (먼저 수행 — 실패 시 프로젝트 디렉토리 무변경) ---
   RENDER_TMPDIR=$(mktemp -d)
+  chmod 700 "$RENDER_TMPDIR"
   log_info "Rendering template to temporary directory..."
 
   cookiecutter "$SCRIPT_DIR" \
@@ -271,6 +252,31 @@ render_and_extract() {
   if [ ! -d "$rendered_dir" ]; then
     log_error "Template rendering failed. Expected directory: $rendered_dir"
     exit 1
+  fi
+
+  log_success "Template rendered successfully"
+
+  # --- 2b. 기존 인프라 파일 백업 (렌더링 성공 확인 후) ---
+  log_info "Backing up existing infrastructure files..."
+
+  if [ -f "$PROJECT_DIR/Makefile" ]; then
+    cp "$PROJECT_DIR/Makefile" "$PROJECT_DIR/Makefile.bak.${timestamp}"
+    log_info "  Makefile -> Makefile.bak.${timestamp}"
+  fi
+
+  if [ -d "$PROJECT_DIR/terraform" ]; then
+    mv "$PROJECT_DIR/terraform" "$PROJECT_DIR/terraform.bak.${timestamp}"
+    log_info "  terraform/ -> terraform.bak.${timestamp}/"
+  fi
+
+  local workflow_dir="$PROJECT_DIR/.github/workflows"
+  if [ -d "$workflow_dir" ]; then
+    for wf in create-infra.yml destroy.yml deploy.yml deploy-ec2.yml; do
+      if [ -f "$workflow_dir/$wf" ]; then
+        cp "$workflow_dir/$wf" "$workflow_dir/${wf}.bak.${timestamp}"
+        log_info "  .github/workflows/$wf -> ${wf}.bak.${timestamp}"
+      fi
+    done
   fi
 
   # --- 2c. 인프라 파일 복사 ---
@@ -304,12 +310,15 @@ render_and_extract() {
 
   # 렌더링 결과물에 cookiecutter 잔여 변수가 없는지 검증
   local residual
-  residual=$(grep -r '{{cookiecutter\.' "$PROJECT_DIR/terraform/" 2>/dev/null || echo "")
-  if [ -n "$residual" ]; then
-    log_error "Cookiecutter residual variables found in terraform/:"
-    echo "$residual"
-    exit 1
-  fi
+  local check_paths=("$PROJECT_DIR/terraform/" "$PROJECT_DIR/.github/workflows/" "$PROJECT_DIR/Makefile")
+  for check_path in "${check_paths[@]}"; do
+    residual=$(grep -r '{{cookiecutter\.' "$check_path" 2>/dev/null || echo "")
+    if [ -n "$residual" ]; then
+      log_error "Cookiecutter residual variables found in $check_path:"
+      echo "$residual"
+      exit 1
+    fi
+  done
 
   log_success "Infrastructure files extracted successfully"
 }
@@ -392,11 +401,11 @@ setup_git_and_github() {
 
   local aws_key aws_secret aws_account_id
 
-  # AWS credentials
+  # AWS credentials — stdin으로 전달하여 프로세스 목록 노출 방지
   if printf '%s\n' "${missing_secrets[@]}" | grep -q "^AWS_ACCESS_KEY_ID$"; then
     aws_key=$(aws configure get aws_access_key_id 2>/dev/null || echo "")
     if [ -n "$aws_key" ]; then
-      gh secret set AWS_ACCESS_KEY_ID --repo "$REPO_FULL_NAME" --body "$aws_key"
+      echo "$aws_key" | gh secret set AWS_ACCESS_KEY_ID --repo "$REPO_FULL_NAME"
       log_info "  AWS_ACCESS_KEY_ID set (from AWS CLI profile)"
     else
       log_error "Could not auto-detect AWS_ACCESS_KEY_ID. Set it manually:"
@@ -408,7 +417,7 @@ setup_git_and_github() {
   if printf '%s\n' "${missing_secrets[@]}" | grep -q "^AWS_SECRET_ACCESS_KEY$"; then
     aws_secret=$(aws configure get aws_secret_access_key 2>/dev/null || echo "")
     if [ -n "$aws_secret" ]; then
-      gh secret set AWS_SECRET_ACCESS_KEY --repo "$REPO_FULL_NAME" --body "$aws_secret"
+      echo "$aws_secret" | gh secret set AWS_SECRET_ACCESS_KEY --repo "$REPO_FULL_NAME"
       log_info "  AWS_SECRET_ACCESS_KEY set (from AWS CLI profile)"
     else
       log_error "Could not auto-detect AWS_SECRET_ACCESS_KEY. Set it manually:"
@@ -419,7 +428,7 @@ setup_git_and_github() {
 
   if printf '%s\n' "${missing_secrets[@]}" | grep -q "^AWS_ACCOUNT_ID$"; then
     aws_account_id=$(aws sts get-caller-identity --query Account --output text)
-    gh secret set AWS_ACCOUNT_ID --repo "$REPO_FULL_NAME" --body "$aws_account_id"
+    echo "$aws_account_id" | gh secret set AWS_ACCOUNT_ID --repo "$REPO_FULL_NAME"
     log_info "  AWS_ACCOUNT_ID set ($aws_account_id)"
   fi
 
@@ -427,7 +436,7 @@ setup_git_and_github() {
   if printf '%s\n' "${missing_secrets[@]}" | grep -q "^DB_PASSWORD$"; then
     local db_pass
     db_pass=$(python3 -c "import secrets; print(secrets.token_urlsafe(16))")
-    gh secret set DB_PASSWORD --repo "$REPO_FULL_NAME" --body "$db_pass"
+    echo "$db_pass" | gh secret set DB_PASSWORD --repo "$REPO_FULL_NAME"
     log_info "  DB_PASSWORD set (auto-generated)"
   fi
 
@@ -435,7 +444,7 @@ setup_git_and_github() {
   if printf '%s\n' "${missing_secrets[@]}" | grep -q "^DJANGO_SECRET_KEY$"; then
     local django_key
     django_key=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
-    gh secret set DJANGO_SECRET_KEY --repo "$REPO_FULL_NAME" --body "$django_key"
+    echo "$django_key" | gh secret set DJANGO_SECRET_KEY --repo "$REPO_FULL_NAME"
     log_info "  DJANGO_SECRET_KEY set (auto-generated)"
   fi
 
@@ -448,7 +457,7 @@ setup_git_and_github() {
         log_info "  SSH key generated: $key_path"
       fi
       gh secret set EC2_SSH_PRIVATE_KEY --repo "$REPO_FULL_NAME" < "$key_path"
-      gh secret set EC2_SSH_PUBLIC_KEY --repo "$REPO_FULL_NAME" --body "$(cat "${key_path}.pub")"
+      cat "${key_path}.pub" | gh secret set EC2_SSH_PUBLIC_KEY --repo "$REPO_FULL_NAME"
       log_info "  EC2_SSH_PRIVATE_KEY and EC2_SSH_PUBLIC_KEY set"
     fi
   fi
@@ -466,10 +475,8 @@ commit_and_push_infra() {
 
   # 인프라 파일 stage
   git add terraform/ .github/workflows/ Makefile
-  # .env.example이 새로 생성된 경우에만 stage
-  if git diff --cached --name-only | grep -q "^\.env\.example$" 2>/dev/null; then
-    git add .env.example
-  elif [ -f .env.example ] && git ls-files --others --exclude-standard .env.example | grep -q ".env.example"; then
+  # .env.example이 untracked(새로 생성된) 경우에만 stage
+  if [ -f .env.example ] && git ls-files --others --exclude-standard .env.example | grep -q ".env.example"; then
     git add .env.example
   fi
 
