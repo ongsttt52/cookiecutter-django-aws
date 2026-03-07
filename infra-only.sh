@@ -2,13 +2,14 @@
 set -euo pipefail
 
 # ==============================================================================
-# infra-only.sh — 기존 프로젝트에 AWS 인프라만 생성하는 스크립트
+# infra-only.sh — 기존 프로젝트에 AWS 인프라 파일을 생성하고 배포하는 스크립트
 #
-# cookiecutter 렌더링 없이, 이미 렌더링/개발된 프로젝트 디렉토리에서
-# Terraform state 버킷 생성 → create-infra.yml 트리거 → (선택) 앱 배포를 수행.
+# cookiecutter 템플릿을 렌더링하여 인프라 파일(terraform/, .github/workflows/,
+# Makefile)을 대상 프로젝트에 복사한 뒤, GitHub Actions로 AWS 인프라를 생성.
+# Makefile 파싱 없이 프롬프트 입력 또는 기본값을 사용.
 #
 # Usage:
-#   cd /path/to/my_rendered_project
+#   cd /path/to/my_project
 #   /path/to/cookiecutter-django-aws/infra-only.sh
 #   /path/to/cookiecutter-django-aws/infra-only.sh --skip-deploy
 #   /path/to/cookiecutter-django-aws/infra-only.sh --no-input
@@ -19,6 +20,9 @@ PROJECT_DIR="$(pwd)"
 NO_INPUT=false
 SKIP_DEPLOY=false
 
+# 렌더링 임시 디렉토리 (cleanup trap에서 사용)
+RENDER_TMPDIR=""
+
 # Parse arguments
 for arg in "$@"; do
   case $arg in
@@ -27,16 +31,26 @@ for arg in "$@"; do
     --help|-h)
       echo "Usage: infra-only.sh [OPTIONS]"
       echo ""
-      echo "Run from inside a rendered cookiecutter-django-aws project directory."
+      echo "Add AWS infrastructure files to any existing project directory."
+      echo "Renders the cookiecutter-django-aws template and copies only the"
+      echo "infrastructure files (terraform/, .github/workflows/, Makefile)."
       echo ""
       echo "Options:"
       echo "  --skip-deploy   Create infrastructure only (skip app deployment)"
-      echo "  --no-input      Non-interactive mode (no prompts)"
+      echo "  --no-input      Non-interactive mode (use default values)"
       echo "  --help, -h      Show this help"
       echo ""
-      echo "Example:"
+      echo "Examples:"
+      echo "  # Interactive mode — prompts for project name, region, etc."
       echo "  cd /path/to/my_project"
       echo "  /path/to/cookiecutter-django-aws/infra-only.sh"
+      echo ""
+      echo "  # Non-interactive — uses directory name + defaults"
+      echo "  cd /path/to/my_project"
+      echo "  /path/to/cookiecutter-django-aws/infra-only.sh --no-input"
+      echo ""
+      echo "  # Infrastructure only, no app deployment"
+      echo "  /path/to/cookiecutter-django-aws/infra-only.sh --skip-deploy"
       exit 0
       ;;
     *)
@@ -51,6 +65,16 @@ done
 source "$SCRIPT_DIR/lib/common.sh"
 
 # ==============================================================================
+# Cleanup trap — 임시 디렉토리 정리 (정상/비정상 종료 모두)
+# ==============================================================================
+cleanup() {
+  if [ -n "$RENDER_TMPDIR" ] && [ -d "$RENDER_TMPDIR" ]; then
+    rm -rf "$RENDER_TMPDIR"
+  fi
+}
+trap cleanup EXIT
+
+# ==============================================================================
 # Step 0: Prerequisites Check
 # ==============================================================================
 check_prerequisites() {
@@ -58,10 +82,10 @@ check_prerequisites() {
 
   local missing=()
 
-  # infra-only에서는 cookiecutter/docker가 불필요
-  command -v aws >/dev/null 2>&1  || missing+=("aws CLI (https://aws.amazon.com/cli/)")
-  command -v gh >/dev/null 2>&1   || missing+=("gh CLI (https://cli.github.com/)")
-  command -v git >/dev/null 2>&1  || missing+=("git")
+  command -v aws >/dev/null 2>&1          || missing+=("aws CLI (https://aws.amazon.com/cli/)")
+  command -v gh >/dev/null 2>&1           || missing+=("gh CLI (https://cli.github.com/)")
+  command -v git >/dev/null 2>&1          || missing+=("git")
+  command -v cookiecutter >/dev/null 2>&1 || missing+=("cookiecutter (pip install cookiecutter)")
 
   if [ ${#missing[@]} -gt 0 ]; then
     log_error "Missing required tools:"
@@ -91,161 +115,263 @@ check_prerequisites() {
 }
 
 # ==============================================================================
-# Step 1: Detect Project Config (Makefile 파싱)
+# Step 1: Collect Infrastructure Inputs
 # ==============================================================================
-detect_project_config() {
-  log_step "1" "Detecting Project Configuration"
+collect_infra_inputs() {
+  log_step "1" "Collecting Infrastructure Configuration"
 
-  # Makefile 존재 여부 확인
-  if [ ! -f "$PROJECT_DIR/Makefile" ]; then
-    log_error "Makefile not found in $PROJECT_DIR"
-    log_error "This script must be run from a rendered cookiecutter-django-aws project directory."
-    exit 1
-  fi
+  # 기본값: 현재 디렉토리명을 slug화
+  local dir_name
+  dir_name=$(basename "$PROJECT_DIR")
+  local default_name
+  default_name=$(echo "$dir_name" | tr '[:upper:]' '[:lower:]' | tr ' ' '_' | tr '-' '_')
 
-  # Makefile에서 변수 파싱 (렌더링 시 하드코딩된 값)
-  PROJECT_SLUG=$(grep -E '^PROJECT_NAME\s*=' "$PROJECT_DIR/Makefile" | head -1 | sed 's/^PROJECT_NAME\s*=\s*//' | tr -d ' ')
-  AWS_REGION=$(grep -E '^AWS_REGION\s*=' "$PROJECT_DIR/Makefile" | head -1 | sed 's/^AWS_REGION\s*=\s*//' | tr -d ' ')
-  local tf_bucket
-  tf_bucket=$(grep -E '^TF_STATE_BUCKET\s*=' "$PROJECT_DIR/Makefile" | head -1 | sed 's/^TF_STATE_BUCKET\s*=\s*//' | tr -d ' ')
-
-  # 필수 값 검증
-  if [ -z "$PROJECT_SLUG" ]; then
-    log_error "Could not parse PROJECT_NAME from Makefile."
-    exit 1
-  fi
-  # 허용 문자 검증: cookiecutter가 생성하는 slug는 영소문자, 숫자, 언더스코어만 포함
-  if ! [[ "$PROJECT_SLUG" =~ ^[a-z0-9_]+$ ]]; then
-    log_error "Invalid PROJECT_NAME in Makefile: $PROJECT_SLUG"
-    log_error "Expected only lowercase letters, numbers, and underscores."
-    exit 1
-  fi
-  if [ -z "$AWS_REGION" ]; then
-    log_error "Could not parse AWS_REGION from Makefile."
-    exit 1
-  fi
-  if ! [[ "$AWS_REGION" =~ ^[a-z]{2}-[a-z]+-[0-9]+$ ]]; then
-    log_error "Invalid AWS_REGION in Makefile: $AWS_REGION"
-    exit 1
-  fi
-
-  # TF_STATE_BUCKET: Makefile에 있으면 사용, 없으면 기본값 생성
-  if [ -n "$tf_bucket" ]; then
-    TF_STATE_BUCKET="$tf_bucket"
-  fi
-
-  # 배포 모드 감지: terraform/ 내 파일 기준
-  if [ -f "$PROJECT_DIR/terraform/ecs.tf" ]; then
-    DEPLOY_MODE="ecs-fargate"
-  elif [ -f "$PROJECT_DIR/terraform/ec2.tf" ]; then
-    DEPLOY_MODE="ec2-all-in-one"
+  if [ "$NO_INPUT" = true ]; then
+    PROJECT_NAME="$default_name"
+    AWS_DEPLOYMENT="ecs-fargate"
+    AWS_REGION="ap-northeast-2"
+    USE_FRONTEND="no"
+    USE_CELERY="no"
+    USE_WEBSOCKET="no"
+    GITHUB_RUNNER="ubuntu-latest"
+    log_info "Using default values (--no-input)"
   else
-    log_error "Cannot detect deployment mode. Neither terraform/ecs.tf nor terraform/ec2.tf found."
+    read -rp "Project name [$default_name]: " PROJECT_NAME
+    PROJECT_NAME=${PROJECT_NAME:-$default_name}
+
+    echo ""
+    echo "Deployment options:"
+    echo "  1) ecs-fargate    — Production-grade, ~\$60/month"
+    echo "  2) ec2-all-in-one — Cost-effective demo, ~\$15/month"
+    read -rp "Deployment mode [1]: " DEPLOY_CHOICE
+    case "${DEPLOY_CHOICE:-1}" in
+      1) AWS_DEPLOYMENT="ecs-fargate" ;;
+      2) AWS_DEPLOYMENT="ec2-all-in-one" ;;
+      *) AWS_DEPLOYMENT="ecs-fargate" ;;
+    esac
+
+    read -rp "AWS Region [ap-northeast-2]: " AWS_REGION
+    AWS_REGION=${AWS_REGION:-ap-northeast-2}
+
+    read -rp "Use Frontend (Next.js)? (yes/no) [no]: " USE_FRONTEND
+    USE_FRONTEND=${USE_FRONTEND:-no}
+
+    read -rp "Use Celery? (yes/no) [no]: " USE_CELERY
+    USE_CELERY=${USE_CELERY:-no}
+
+    read -rp "Use WebSocket? (yes/no) [no]: " USE_WEBSOCKET
+    USE_WEBSOCKET=${USE_WEBSOCKET:-no}
+
+    read -rp "GitHub Runner [ubuntu-latest]: " GITHUB_RUNNER
+    GITHUB_RUNNER=${GITHUB_RUNNER:-ubuntu-latest}
+  fi
+
+  # slug 생성
+  PROJECT_SLUG=$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '_' | tr '-' '_')
+
+  # slug 형식 검증
+  if ! [[ "$PROJECT_SLUG" =~ ^[a-z0-9_]+$ ]]; then
+    log_error "Invalid project name: $PROJECT_SLUG"
+    log_error "Only lowercase letters, numbers, and underscores are allowed."
     exit 1
   fi
 
-  log_success "Project detected"
-  log_info "Project:    $PROJECT_SLUG"
-  log_info "Region:     $AWS_REGION"
-  log_info "Deploy:     $DEPLOY_MODE"
-  log_info "Directory:  $PROJECT_DIR"
+  # 18자 길이 제한 (ALB/TG 32-char limit 대응)
+  local max_len=18
+  if [ ${#PROJECT_SLUG} -gt $max_len ]; then
+    log_error "Project slug '$PROJECT_SLUG' is ${#PROJECT_SLUG} characters (max $max_len)."
+    log_error "AWS resource names (ALB, Target Group) have a 32-char limit."
+    log_error "Please choose a shorter project name."
+    if [ "$NO_INPUT" = true ]; then
+      exit 1
+    fi
+    echo ""
+    collect_infra_inputs  # 재입력
+    return
+  fi
+
+  # AWS 리전 형식 검증
+  if ! [[ "$AWS_REGION" =~ ^[a-z]{2}-[a-z]+-[0-9]+$ ]]; then
+    log_error "Invalid AWS region: $AWS_REGION"
+    exit 1
+  fi
+
+  # DEPLOY_MODE 설정 (다른 함수에서 사용)
+  DEPLOY_MODE="$AWS_DEPLOYMENT"
+
+  echo ""
+  log_info "Configuration summary:"
+  echo "  Project:    $PROJECT_NAME ($PROJECT_SLUG)"
+  echo "  Deployment: $AWS_DEPLOYMENT"
+  echo "  Region:     $AWS_REGION"
+  echo "  Frontend:   $USE_FRONTEND"
+  echo "  Celery:     $USE_CELERY"
+  echo "  WebSocket:  $USE_WEBSOCKET"
+  echo "  Runner:     $GITHUB_RUNNER"
+
+  if [ "$NO_INPUT" = false ]; then
+    echo ""
+    read -rp "Proceed? (Y/n): " CONFIRM
+    if [[ "${CONFIRM:-Y}" =~ ^[Nn] ]]; then
+      log_info "Cancelled."
+      exit 0
+    fi
+  fi
 }
 
 # ==============================================================================
-# Step 2: Validate (GitHub repo, Secrets, terraform/, push 상태)
+# Step 2: Render & Extract Infrastructure Files
 # ==============================================================================
-validate_project() {
-  log_step "2" "Validating Project State"
+render_and_extract() {
+  log_step "2" "Rendering & Extracting Infrastructure Files"
 
-  local errors=0
+  local timestamp
+  timestamp=$(date +%Y%m%d_%H%M%S)
 
-  # Git repo 확인
-  if [ ! -d "$PROJECT_DIR/.git" ]; then
-    log_error "Not a git repository. Run 'git init' first."
-    errors=$((errors + 1))
+  # --- 2a. 기존 인프라 파일 백업 ---
+  log_info "Backing up existing infrastructure files..."
+
+  if [ -f "$PROJECT_DIR/Makefile" ]; then
+    cp "$PROJECT_DIR/Makefile" "$PROJECT_DIR/Makefile.bak"
+    log_info "  Makefile -> Makefile.bak"
   fi
 
-  # GitHub remote 확인 — PROJECT_DIR 기준으로 조회
+  if [ -d "$PROJECT_DIR/terraform" ]; then
+    mv "$PROJECT_DIR/terraform" "$PROJECT_DIR/terraform.bak.${timestamp}"
+    log_info "  terraform/ -> terraform.bak.${timestamp}/"
+  fi
+
+  local workflow_dir="$PROJECT_DIR/.github/workflows"
+  if [ -d "$workflow_dir" ]; then
+    for wf in create-infra.yml destroy.yml deploy.yml deploy-ec2.yml; do
+      if [ -f "$workflow_dir/$wf" ]; then
+        cp "$workflow_dir/$wf" "$workflow_dir/${wf}.bak"
+        log_info "  .github/workflows/$wf -> ${wf}.bak"
+      fi
+    done
+  fi
+
+  # --- 2b. cookiecutter 렌더링 ---
+  RENDER_TMPDIR=$(mktemp -d)
+  log_info "Rendering template to temporary directory..."
+
+  cookiecutter "$SCRIPT_DIR" \
+    --no-input \
+    --output-dir "$RENDER_TMPDIR" \
+    project_name="$PROJECT_NAME" \
+    use_celery="$USE_CELERY" \
+    use_websocket="$USE_WEBSOCKET" \
+    use_frontend="$USE_FRONTEND" \
+    aws_deployment="$AWS_DEPLOYMENT" \
+    aws_region="$AWS_REGION" \
+    github_runner="$GITHUB_RUNNER"
+
+  local rendered_dir="$RENDER_TMPDIR/$PROJECT_SLUG"
+
+  if [ ! -d "$rendered_dir" ]; then
+    log_error "Template rendering failed. Expected directory: $rendered_dir"
+    exit 1
+  fi
+
+  # --- 2c. 인프라 파일 복사 ---
+  log_info "Copying infrastructure files..."
+
+  # terraform/ 전체 (post_gen_project.py가 ECS/EC2 정리 완료)
+  cp -R "$rendered_dir/terraform" "$PROJECT_DIR/terraform"
+  log_success "  terraform/"
+
+  # .github/workflows/ — 인프라 관련 워크플로우만
+  mkdir -p "$PROJECT_DIR/.github/workflows"
+  cp "$rendered_dir/.github/workflows/create-infra.yml" "$PROJECT_DIR/.github/workflows/"
+  cp "$rendered_dir/.github/workflows/destroy.yml" "$PROJECT_DIR/.github/workflows/"
+  # deploy.yml은 ECS/EC2 모두 post_gen_project.py가 정리 후 deploy.yml로 통일
+  if [ -f "$rendered_dir/.github/workflows/deploy.yml" ]; then
+    cp "$rendered_dir/.github/workflows/deploy.yml" "$PROJECT_DIR/.github/workflows/"
+  fi
+  log_success "  .github/workflows/"
+
+  # Makefile
+  cp "$rendered_dir/Makefile" "$PROJECT_DIR/Makefile"
+  log_success "  Makefile"
+
+  # .env.example — 없는 경우만 복사
+  if [ ! -f "$PROJECT_DIR/.env.example" ]; then
+    cp "$rendered_dir/.env.example" "$PROJECT_DIR/.env.example"
+    log_success "  .env.example (created)"
+  else
+    log_info "  .env.example already exists (skipped)"
+  fi
+
+  # 렌더링 결과물에 cookiecutter 잔여 변수가 없는지 검증
+  local residual
+  residual=$(grep -r '{{cookiecutter\.' "$PROJECT_DIR/terraform/" 2>/dev/null || echo "")
+  if [ -n "$residual" ]; then
+    log_error "Cookiecutter residual variables found in terraform/:"
+    echo "$residual"
+    exit 1
+  fi
+
+  log_success "Infrastructure files extracted successfully"
+}
+
+# ==============================================================================
+# Step 3: Setup Git & GitHub
+# ==============================================================================
+setup_git_and_github() {
+  log_step "3" "Setting Up Git & GitHub"
+
+  cd "$PROJECT_DIR"
+
+  # --- 3a. Git init ---
+  if [ ! -d .git ]; then
+    log_info "Initializing git repository..."
+    git init
+    git add .
+    git commit -m "Initial commit"
+    log_success "Git repository initialized"
+  else
+    log_info "Git repository already initialized"
+  fi
+
+  # --- 3b. GitHub remote ---
   REPO_FULL_NAME=""
-  if git -C "$PROJECT_DIR" remote get-url origin >/dev/null 2>&1; then
+  if git remote get-url origin >/dev/null 2>&1; then
     local remote_url
-    remote_url=$(git -C "$PROJECT_DIR" remote get-url origin)
+    remote_url=$(git remote get-url origin)
     REPO_FULL_NAME=$(gh repo view "$remote_url" --json nameWithOwner --jq .nameWithOwner 2>/dev/null || echo "")
   fi
 
   if [ -z "$REPO_FULL_NAME" ]; then
-    log_error "No GitHub remote found. Run 'make init' or set up a GitHub remote first."
-    errors=$((errors + 1))
+    log_info "No GitHub remote found. Creating repository..."
+
+    local repo_name="$PROJECT_SLUG"
+    if [ "$NO_INPUT" = false ]; then
+      read -rp "GitHub repo name [$repo_name]: " input_name
+      repo_name=${input_name:-$repo_name}
+    fi
+
+    # EC2 All-in-One은 EC2에서 직접 git clone하므로 public 필요
+    local visibility="--private"
+    if [ "$DEPLOY_MODE" = "ec2-all-in-one" ]; then
+      visibility="--public"
+    fi
+
+    log_info "Creating GitHub repository: $repo_name ($visibility)"
+    gh repo create "$repo_name" $visibility --source=. --remote=origin 2>&1
+    REPO_FULL_NAME=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+    log_success "GitHub repo created: $REPO_FULL_NAME"
   else
     log_success "GitHub repo: $REPO_FULL_NAME"
   fi
 
-  # terraform/ 디렉토리 확인
-  if [ ! -d "$PROJECT_DIR/terraform" ]; then
-    log_error "terraform/ directory not found."
-    errors=$((errors + 1))
-  else
-    log_success "terraform/ directory exists"
-  fi
-
-  # GitHub Secrets 확인
-  if [ -n "$REPO_FULL_NAME" ]; then
-    validate_secrets
-  fi
-
-  # 로컬 terraform 변경이 push되지 않은 경우 경고
-  # create-infra.yml은 remote의 코드를 checkout하므로, 로컬 변경은 반영되지 않음
-  if [ -d "$PROJECT_DIR/.git" ] && [ -d "$PROJECT_DIR/terraform" ]; then
-    local unpushed
-    unpushed=$(git -C "$PROJECT_DIR" diff --name-only HEAD @{upstream} -- terraform/ 2>/dev/null || echo "")
-    local unstaged
-    unstaged=$(git -C "$PROJECT_DIR" diff --name-only -- terraform/ 2>/dev/null || echo "")
-    local untracked
-    untracked=$(git -C "$PROJECT_DIR" ls-files --others --exclude-standard terraform/ 2>/dev/null || echo "")
-
-    if [ -n "$unstaged" ] || [ -n "$untracked" ]; then
-      log_warn "terraform/ has uncommitted changes. These will NOT be used by GitHub Actions."
-      log_warn "Commit and push before running this script."
-      if [ "$NO_INPUT" = false ]; then
-        read -rp "Continue anyway? (Y/n): " CONTINUE
-        if [[ "${CONTINUE:-Y}" =~ ^[Nn] ]]; then
-          log_info "Cancelled."
-          exit 0
-        fi
-      fi
-    elif [ -n "$unpushed" ]; then
-      log_warn "terraform/ has unpushed commits. Run 'git push' first."
-      if [ "$NO_INPUT" = false ]; then
-        read -rp "Continue anyway? (Y/n): " CONTINUE
-        if [[ "${CONTINUE:-Y}" =~ ^[Nn] ]]; then
-          log_info "Cancelled."
-          exit 0
-        fi
-      fi
-    fi
-  fi
-
-  if [ $errors -gt 0 ]; then
-    log_error "$errors validation error(s). Fix them and retry."
-    exit 1
-  fi
-
-  log_success "All validations passed"
-}
-
-# ==============================================================================
-# Secrets 검증 헬퍼
-# ==============================================================================
-validate_secrets() {
+  # --- 3c. GitHub Secrets ---
   log_info "Checking GitHub Secrets..."
 
   local secret_list
   secret_list=$(gh secret list --repo "$REPO_FULL_NAME" --json name --jq '.[].name' 2>/dev/null || echo "")
 
-  # 공통 필수 Secrets
+  # 필수 Secrets 목록
   local required_secrets=("AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "AWS_ACCOUNT_ID" "DB_PASSWORD" "DJANGO_SECRET_KEY")
-
-  # EC2 모드 추가 Secrets
   if [ "$DEPLOY_MODE" = "ec2-all-in-one" ]; then
     required_secrets+=("EC2_SSH_PRIVATE_KEY" "EC2_SSH_PUBLIC_KEY")
   fi
@@ -257,33 +383,131 @@ validate_secrets() {
     fi
   done
 
-  if [ ${#missing_secrets[@]} -gt 0 ]; then
-    log_error "Missing GitHub Secrets:"
-    for s in "${missing_secrets[@]}"; do
-      echo "  - $s"
-    done
-    echo ""
-    log_info "Run 'make setup-secrets' in the project directory to configure them."
-    exit 1
+  if [ ${#missing_secrets[@]} -eq 0 ]; then
+    log_success "All required GitHub Secrets already set"
+    return
   fi
 
-  log_success "All required GitHub Secrets are set"
+  log_info "Setting missing GitHub Secrets (${#missing_secrets[@]} missing)..."
+
+  local aws_key aws_secret aws_account_id
+
+  # AWS credentials
+  if printf '%s\n' "${missing_secrets[@]}" | grep -q "^AWS_ACCESS_KEY_ID$"; then
+    aws_key=$(aws configure get aws_access_key_id 2>/dev/null || echo "")
+    if [ -n "$aws_key" ]; then
+      gh secret set AWS_ACCESS_KEY_ID --repo "$REPO_FULL_NAME" --body "$aws_key"
+      log_info "  AWS_ACCESS_KEY_ID set (from AWS CLI profile)"
+    else
+      log_error "Could not auto-detect AWS_ACCESS_KEY_ID. Set it manually:"
+      log_error "  gh secret set AWS_ACCESS_KEY_ID --repo $REPO_FULL_NAME"
+      exit 1
+    fi
+  fi
+
+  if printf '%s\n' "${missing_secrets[@]}" | grep -q "^AWS_SECRET_ACCESS_KEY$"; then
+    aws_secret=$(aws configure get aws_secret_access_key 2>/dev/null || echo "")
+    if [ -n "$aws_secret" ]; then
+      gh secret set AWS_SECRET_ACCESS_KEY --repo "$REPO_FULL_NAME" --body "$aws_secret"
+      log_info "  AWS_SECRET_ACCESS_KEY set (from AWS CLI profile)"
+    else
+      log_error "Could not auto-detect AWS_SECRET_ACCESS_KEY. Set it manually:"
+      log_error "  gh secret set AWS_SECRET_ACCESS_KEY --repo $REPO_FULL_NAME"
+      exit 1
+    fi
+  fi
+
+  if printf '%s\n' "${missing_secrets[@]}" | grep -q "^AWS_ACCOUNT_ID$"; then
+    aws_account_id=$(aws sts get-caller-identity --query Account --output text)
+    gh secret set AWS_ACCOUNT_ID --repo "$REPO_FULL_NAME" --body "$aws_account_id"
+    log_info "  AWS_ACCOUNT_ID set ($aws_account_id)"
+  fi
+
+  # DB Password
+  if printf '%s\n' "${missing_secrets[@]}" | grep -q "^DB_PASSWORD$"; then
+    local db_pass
+    db_pass=$(python3 -c "import secrets; print(secrets.token_urlsafe(16))")
+    gh secret set DB_PASSWORD --repo "$REPO_FULL_NAME" --body "$db_pass"
+    log_info "  DB_PASSWORD set (auto-generated)"
+  fi
+
+  # Django Secret Key
+  if printf '%s\n' "${missing_secrets[@]}" | grep -q "^DJANGO_SECRET_KEY$"; then
+    local django_key
+    django_key=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
+    gh secret set DJANGO_SECRET_KEY --repo "$REPO_FULL_NAME" --body "$django_key"
+    log_info "  DJANGO_SECRET_KEY set (auto-generated)"
+  fi
+
+  # EC2 SSH keys
+  if [ "$DEPLOY_MODE" = "ec2-all-in-one" ]; then
+    if printf '%s\n' "${missing_secrets[@]}" | grep -q "^EC2_SSH_PRIVATE_KEY$"; then
+      local key_path="$HOME/.ssh/${PROJECT_SLUG//_/-}-ec2-key"
+      if [ ! -f "$key_path" ]; then
+        ssh-keygen -t ed25519 -f "$key_path" -N "" -C "$PROJECT_SLUG-ec2"
+        log_info "  SSH key generated: $key_path"
+      fi
+      gh secret set EC2_SSH_PRIVATE_KEY --repo "$REPO_FULL_NAME" < "$key_path"
+      gh secret set EC2_SSH_PUBLIC_KEY --repo "$REPO_FULL_NAME" --body "$(cat "${key_path}.pub")"
+      log_info "  EC2_SSH_PRIVATE_KEY and EC2_SSH_PUBLIC_KEY set"
+    fi
+  fi
+
+  log_success "GitHub Secrets configured"
 }
 
 # ==============================================================================
-# Step 3: Ensure Terraform State Bucket
+# Step 4: Commit & Push Infrastructure Files
+# ==============================================================================
+commit_and_push_infra() {
+  log_step "4" "Committing & Pushing Infrastructure Files"
+
+  cd "$PROJECT_DIR"
+
+  # 인프라 파일 stage
+  git add terraform/ .github/workflows/ Makefile
+  # .env.example이 새로 생성된 경우에만 stage
+  if git diff --cached --name-only | grep -q "^\.env\.example$" 2>/dev/null; then
+    git add .env.example
+  elif [ -f .env.example ] && git ls-files --others --exclude-standard .env.example | grep -q ".env.example"; then
+    git add .env.example
+  fi
+
+  # 변경사항이 있는지 확인
+  if git diff --cached --quiet 2>/dev/null; then
+    log_info "No changes to commit (infrastructure files already up to date)"
+  else
+    git commit -m "feat: add AWS infrastructure files ($DEPLOY_MODE)"
+    log_success "Changes committed"
+  fi
+
+  # 현재 브랜치 확인
+  local current_branch
+  current_branch=$(git branch --show-current)
+  if [ "$current_branch" != "main" ]; then
+    log_warn "Current branch is '$current_branch', not 'main'."
+    log_warn "GitHub Actions workflows typically trigger on 'main' branch pushes."
+  fi
+
+  # Push
+  git push origin "$current_branch"
+  log_success "Pushed to origin/$current_branch"
+}
+
+# ==============================================================================
+# Step 5: Ensure Terraform State Bucket
 # ==============================================================================
 do_ensure_state_bucket() {
-  log_step "3" "Ensuring Terraform State Bucket"
+  log_step "5" "Ensuring Terraform State Bucket"
 
   ensure_state_bucket
 }
 
 # ==============================================================================
-# Step 4: Create Infrastructure
+# Step 6: Create Infrastructure
 # ==============================================================================
 create_infrastructure() {
-  log_step "4" "Creating AWS Infrastructure"
+  log_step "6" "Creating AWS Infrastructure"
 
   if [ "$NO_INPUT" = false ]; then
     echo ""
@@ -306,17 +530,17 @@ create_infrastructure() {
 }
 
 # ==============================================================================
-# Step 5: Deploy Application (선택)
+# Step 7: Deploy Application (optional)
 # ==============================================================================
 deploy_application() {
   if [ "$SKIP_DEPLOY" = true ]; then
-    log_step "5" "Deploy Application (SKIPPED)"
+    log_step "7" "Deploy Application (SKIPPED)"
     log_info "Use --skip-deploy was specified. Skipping app deployment."
     log_info "To deploy later, push to main branch or trigger the workflow manually."
     return
   fi
 
-  log_step "5" "Deploying Application"
+  log_step "7" "Deploying Application"
 
   if [ "$NO_INPUT" = false ]; then
     read -rp "Deploy application now? (Y/n): " DEPLOY_CONFIRM
@@ -342,10 +566,10 @@ deploy_application() {
 }
 
 # ==============================================================================
-# Step 6: Verify Endpoint
+# Step 8: Verify Endpoint
 # ==============================================================================
 do_verify_endpoint() {
-  log_step "6" "Verifying Deployment"
+  log_step "8" "Verifying Deployment"
 
   if [ "$SKIP_DEPLOY" = true ]; then
     log_info "Deployment was skipped. Skipping endpoint verification."
@@ -375,10 +599,10 @@ do_verify_endpoint() {
 }
 
 # ==============================================================================
-# Step 7: Summary
+# Step 9: Summary
 # ==============================================================================
 show_summary() {
-  log_step "7" "Summary"
+  log_step "9" "Summary"
 
   echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo -e "${GREEN}${BOLD}  Infrastructure Ready!${NC}"
@@ -425,14 +649,16 @@ main() {
   echo -e "${BOLD}${CYAN}cookiecutter-django-aws${NC} — Infrastructure Only Script"
   echo ""
 
-  check_prerequisites
-  detect_project_config
-  validate_project
-  do_ensure_state_bucket
-  create_infrastructure
-  deploy_application
-  do_verify_endpoint
-  show_summary
+  check_prerequisites        # Step 0
+  collect_infra_inputs        # Step 1
+  render_and_extract          # Step 2
+  setup_git_and_github        # Step 3
+  commit_and_push_infra       # Step 4
+  do_ensure_state_bucket      # Step 5
+  create_infrastructure       # Step 6
+  deploy_application          # Step 7
+  do_verify_endpoint          # Step 8
+  show_summary                # Step 9
 }
 
 main

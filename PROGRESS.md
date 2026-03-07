@@ -293,7 +293,47 @@ ALB (port 80)
 
 ## 현재 작업 중 🚧
 
-Phase 11 완료.
+Phase 12 완료.
+
+### Phase 12: infra-only.sh — 비-cookiecutter 프로젝트 지원 확장 (완료)
+
+**작업일**: 2026-03-07
+
+기존 `infra-only.sh`는 cookiecutter로 렌더링된 프로젝트(Makefile 파싱 의존)만 지원했으나, 임의의 기존 프로젝트(예: Java, Go 등)에서도 AWS 인프라를 생성할 수 있도록 확장. cookiecutter 템플릿을 렌더링하여 인프라 파일만 추출·복사하는 방식.
+
+#### 주요 변경 사항
+- [x] `check_prerequisites()` — `cookiecutter`를 필수 도구로 추가
+- [x] `collect_infra_inputs()` 신규 — 프롬프트로 인프라 설정 수집 (Makefile 파싱 제거)
+  - PROJECT_NAME (기본값: 디렉토리명), AWS_DEPLOYMENT, AWS_REGION, USE_FRONTEND/CELERY/WEBSOCKET, GITHUB_RUNNER
+  - `--no-input` 시 디렉토리명 + 기본값 자동 사용
+  - 18자 slug 길이 검증, 형식 검증 포함
+- [x] `render_and_extract()` 신규 — 핵심 로직
+  - 기존 파일 백업 (Makefile.bak, terraform.bak.YYYYMMDD_HHMMSS/, workflows/*.bak)
+  - `mktemp -d` + `trap EXIT` 자동 cleanup
+  - cookiecutter 렌더링 → 인프라 파일(terraform/, .github/workflows/, Makefile) 복사
+  - .env.example은 없는 경우만 복사
+  - 렌더링 결과에 `{{cookiecutter.*}}` 잔여 변수 없음 검증
+- [x] `setup_git_and_github()` 신규 — git init, GitHub remote 생성, Secrets 자동 설정
+  - 이미 설정된 항목은 스킵 (멱등성)
+  - EC2 모드 SSH 키 자동 생성·등록
+- [x] `commit_and_push_infra()` 신규 — 인프라 파일 선택적 stage, 커밋, 푸시
+  - main 브랜치가 아닌 경우 경고
+- [x] `main()` 수정 — 10-step 플로우 (Prerequisites → Inputs → Render → Git → Commit → State → Infra → Deploy → Verify → Summary)
+- [x] 기존 `detect_project_config()`, `validate_project()`, `validate_secrets()` 제거
+- [x] `--help` 업데이트 — 새 동작 설명 + 3개 예시
+
+**설계 결정:**
+| 결정 | 근거 |
+|------|------|
+| cookiecutter 렌더링 후 복사 | `post_gen_project.py`가 ECS/EC2 파일 정리를 자동 수행. sed 치환 중복 구현 불필요 |
+| 항상 재생성 (모드 분기 없음) | 기존 파일은 백업 후 덮어쓰기. 설정 변경(ECS↔EC2) 시 재실행으로 해결 |
+| Makefile 파싱 없음 | 프롬프트 입력 또는 기본값만 사용. 단순한 설계 |
+| `trap EXIT` 임시 디렉토리 | 정상/비정상 종료 모두에서 cleanup 보장 |
+
+**수정 파일 (1개):**
+- `infra-only.sh` (전면 수정)
+
+---
 
 ### Phase 11: infra-only.sh + 공통 함수 추출 (완료)
 
