@@ -188,27 +188,28 @@ trigger_and_wait_workflow() {
 }
 
 # ==============================================================================
-# verify_endpoint — 배포 후 /api/health/ 헬스체크
+# verify_endpoint — 배포 후 헬스체크
 #
-# 인자: $1=app_url
+# 인자: $1=app_url, $2=health_path (기본값: /api/health/)
 # 출력 변수: APP_URL (검증 성공 시 설정)
 # ==============================================================================
 verify_endpoint() {
   local app_url="$1"
+  local health_path="${2:-/api/health/}"
 
   if [ -z "$app_url" ]; then
     log_warn "No app URL provided. Skipping endpoint verification."
     return
   fi
 
-  log_info "Checking endpoint: $app_url/api/health/"
+  log_info "Checking endpoint: ${app_url}${health_path}"
 
   local max_attempts=10
   local attempt=1
 
   while [ $attempt -le $max_attempts ]; do
     local http_code
-    http_code=$(curl -s -o /dev/null -w "%{http_code}" "$app_url/api/health/" 2>/dev/null || echo "000")
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" "${app_url}${health_path}" 2>/dev/null || echo "000")
 
     if [ "$http_code" = "200" ]; then
       log_success "Endpoint verification passed (HTTP $http_code)"

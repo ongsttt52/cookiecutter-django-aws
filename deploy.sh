@@ -186,6 +186,9 @@ render_template() {
     --no-input \
     --output-dir "$OUTPUT_DIR" \
     project_name="$PROJECT_NAME" \
+    backend_stack="${BACKEND_STACK:-django}" \
+    container_port="${CONTAINER_PORT:-8000}" \
+    health_check_path="${HEALTH_CHECK_PATH:-/api/health/}" \
     use_celery="$USE_CELERY" \
     use_websocket="$USE_WEBSOCKET" \
     use_frontend="$USE_FRONTEND" \

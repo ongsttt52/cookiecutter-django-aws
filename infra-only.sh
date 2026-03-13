@@ -129,6 +129,9 @@ collect_infra_inputs() {
   while true; do
     if [ "$NO_INPUT" = true ]; then
       PROJECT_NAME="$default_name"
+      BACKEND_STACK="django"
+      CONTAINER_PORT="8000"
+      HEALTH_CHECK_PATH="/api/health/"
       AWS_DEPLOYMENT="ecs-fargate"
       AWS_REGION="ap-northeast-2"
       USE_FRONTEND="no"
@@ -139,6 +142,15 @@ collect_infra_inputs() {
     else
       read -rp "Project name [$default_name]: " PROJECT_NAME
       PROJECT_NAME=${PROJECT_NAME:-$default_name}
+
+      read -rp "Backend stack [django]: " BACKEND_STACK
+      BACKEND_STACK=${BACKEND_STACK:-django}
+
+      read -rp "Container port [8000]: " CONTAINER_PORT
+      CONTAINER_PORT=${CONTAINER_PORT:-8000}
+
+      read -rp "Health check path [/api/health/]: " HEALTH_CHECK_PATH
+      HEALTH_CHECK_PATH=${HEALTH_CHECK_PATH:-/api/health/}
 
       echo ""
       echo "Deployment options:"
@@ -204,13 +216,16 @@ collect_infra_inputs() {
 
   echo ""
   log_info "Configuration summary:"
-  echo "  Project:    $PROJECT_NAME ($PROJECT_SLUG)"
-  echo "  Deployment: $AWS_DEPLOYMENT"
-  echo "  Region:     $AWS_REGION"
-  echo "  Frontend:   $USE_FRONTEND"
-  echo "  Celery:     $USE_CELERY"
-  echo "  WebSocket:  $USE_WEBSOCKET"
-  echo "  Runner:     $GITHUB_RUNNER"
+  echo "  Project:      $PROJECT_NAME ($PROJECT_SLUG)"
+  echo "  Backend:      $BACKEND_STACK"
+  echo "  Port:         $CONTAINER_PORT"
+  echo "  Health check: $HEALTH_CHECK_PATH"
+  echo "  Deployment:   $AWS_DEPLOYMENT"
+  echo "  Region:       $AWS_REGION"
+  echo "  Frontend:     $USE_FRONTEND"
+  echo "  Celery:       $USE_CELERY"
+  echo "  WebSocket:    $USE_WEBSOCKET"
+  echo "  Runner:       $GITHUB_RUNNER"
 
   if [ "$NO_INPUT" = false ]; then
     echo ""
@@ -240,6 +255,9 @@ render_and_extract() {
     --no-input \
     --output-dir "$RENDER_TMPDIR" \
     project_name="$PROJECT_NAME" \
+    backend_stack="$BACKEND_STACK" \
+    container_port="$CONTAINER_PORT" \
+    health_check_path="$HEALTH_CHECK_PATH" \
     use_celery="$USE_CELERY" \
     use_websocket="$USE_WEBSOCKET" \
     use_frontend="$USE_FRONTEND" \
@@ -602,7 +620,7 @@ do_verify_endpoint() {
     return
   fi
 
-  verify_endpoint "$app_url"
+  verify_endpoint "$app_url" "${HEALTH_CHECK_PATH:-/api/health/}"
 }
 
 # ==============================================================================
@@ -624,8 +642,7 @@ show_summary() {
   if [ -n "${APP_URL:-}" ]; then
     echo ""
     echo "  App URL:     $APP_URL"
-    echo "  API Health:  $APP_URL/api/health/"
-    echo "  API Admin:   $APP_URL/api/admin/"
+    echo "  Health:      $APP_URL${HEALTH_CHECK_PATH:-/api/health/}"
   fi
 
   if [ -n "${TF_STATE_BUCKET:-}" ]; then
