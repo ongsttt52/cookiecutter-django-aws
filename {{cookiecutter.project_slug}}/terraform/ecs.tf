@@ -13,7 +13,72 @@ resource "aws_ecs_cluster" "main" {
 }
 
 # ==============================================================================
-# Backend (Django)
+# Backend 환경변수 동적 조합
+# ==============================================================================
+
+locals {
+  # 공통 환경변수 (모든 백엔드 스택에서 사용)
+  common_env = [
+    {
+      name  = "ENVIRONMENT"
+      value = var.environment
+    },
+    {
+      name  = "AWS_STORAGE_BUCKET_NAME"
+      value = aws_s3_bucket.media.bucket
+    },
+    {
+      name  = "AWS_DEFAULT_REGION"
+      value = var.aws_region
+    },
+  ]
+
+{% if cookiecutter.backend_stack == "django" %}
+  # Django 전용 환경변수
+  stack_env = [
+    {
+      name  = "DATABASE_URL"
+      value = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.main.endpoint}/${var.db_name}"
+    },
+    {
+      name  = "REDIS_URL"
+      value = "redis://${aws_elasticache_cluster.main.cache_nodes[0].address}:6379/0"
+    },
+    {
+      name  = "ALLOWED_HOSTS"
+      value = "${aws_lb.main.dns_name},*"
+    },
+    {
+      name  = "SECRET_KEY"
+      value = var.app_secret_key
+    },
+    {
+      name  = "CORS_ALLOWED_ORIGINS"
+      value = "http://${aws_lb.main.dns_name}"
+    },
+    {
+      name  = "DJANGO_SUPERUSER_EMAIL"
+      value = var.django_superuser_email
+    },
+    {
+      name  = "DJANGO_SUPERUSER_PASSWORD"
+      value = var.django_superuser_password
+    },
+    {
+      name  = "DJANGO_SUPERUSER_USERNAME"
+      value = "admin"
+    },
+  ]
+{% else %}
+  stack_env = []
+{% endif %}
+
+  # 최종 환경변수: 공통 + 스택별 + 사용자 정의
+  backend_env = concat(local.common_env, local.stack_env, var.app_env_vars)
+}
+
+# ==============================================================================
+# Backend ({{cookiecutter.backend_stack}})
 # ==============================================================================
 
 # Backend CloudWatch 로그 그룹
@@ -39,70 +104,24 @@ resource "aws_ecs_task_definition" "backend" {
 
   container_definitions = jsonencode([
     {
-      name  = "django"
+      name  = "{{cookiecutter.backend_stack}}"
       image = "${aws_ecr_repository.backend.repository_url}:latest"
 
       portMappings = [
         {
-          containerPort = 8000
+          containerPort = var.container_port
           protocol      = "tcp"
         }
       ]
 
-      environment = [
-        {
-          name  = "ENVIRONMENT"
-          value = var.environment
-        },
-        {
-          name  = "DATABASE_URL"
-          value = "postgresql://${var.db_username}:${var.db_password}@${aws_db_instance.main.endpoint}/${var.db_name}"
-        },
-        {
-          name  = "REDIS_URL"
-          value = "redis://${aws_elasticache_cluster.main.cache_nodes[0].address}:6379/0"
-        },
-        {
-          name  = "AWS_STORAGE_BUCKET_NAME"
-          value = aws_s3_bucket.media.bucket
-        },
-        {
-          name  = "AWS_DEFAULT_REGION"
-          value = var.aws_region
-        },
-        {
-          name  = "ALLOWED_HOSTS"
-          # ALB DNS + 와일드카드: ALB 헬스체크는 타겟 IP를 Host 헤더로 보내므로 * 필요
-          value = "${aws_lb.main.dns_name},*"
-        },
-        {
-          name  = "SECRET_KEY"
-          value = var.django_secret_key
-        },
-        {
-          name  = "CORS_ALLOWED_ORIGINS"
-          value = "http://${aws_lb.main.dns_name}"
-        },
-        {
-          name  = "DJANGO_SUPERUSER_EMAIL"
-          value = var.django_superuser_email
-        },
-        {
-          name  = "DJANGO_SUPERUSER_PASSWORD"
-          value = var.django_superuser_password
-        },
-        {
-          name  = "DJANGO_SUPERUSER_USERNAME"
-          value = "admin"
-        }
-      ]
+      environment = local.backend_env
 
       logConfiguration = {
         logDriver = "awslogs"
         options = {
           "awslogs-group"         = aws_cloudwatch_log_group.backend.name
           "awslogs-region"        = var.aws_region
-          "awslogs-stream-prefix" = "django"
+          "awslogs-stream-prefix" = "{{cookiecutter.backend_stack}}"
         }
       }
 
@@ -135,8 +154,8 @@ resource "aws_ecs_service" "backend" {
 
   load_balancer {
     target_group_arn = aws_lb_target_group.backend.arn
-    container_name   = "django"
-    container_port   = 8000
+    container_name   = "{{cookiecutter.backend_stack}}"
+    container_port   = var.container_port
   }
 
   tags = {
