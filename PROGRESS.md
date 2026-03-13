@@ -1,6 +1,6 @@
 # Django AWS Cookiecutter Template - 진행상황
 
-**마지막 업데이트:** 2026-03-07
+**마지막 업데이트:** 2026-03-14
 
 ---
 
@@ -293,8 +293,45 @@ ALB (port 80)
 
 ## 현재 작업 중 🚧
 
-Phase 12 완료. `infra_test` 더미 프로젝트로 E2E 검증 완료 (ECS Fargate 배포 성공).
-다음 작업: Phase A (인프라/배포 레이어를 언어에서 분리).
+Phase A 완료. 다음 작업: Phase B (멀티 스택 템플릿).
+
+### Phase A: 인프라/배포 레이어를 언어에서 분리 (완료)
+
+**작업일**: 2026-03-14
+
+Django 전용 코드를 cookiecutter 조건부(`{% if cookiecutter.backend_stack == "django" %}`)로 격리하여, Phase B(멀티 스택 템플릿)의 기반을 마련.
+
+#### 설계 결정
+| 결정 | 근거 |
+|------|------|
+| deploy.yml 내 조건부 분기 (3-파일 분리는 Phase B로 미룸) | `needs` 의존성 복잡도 회피, Django만 지원하는 현재 단계에서 최소 변경 |
+| `django_secret_key` → `app_secret_key` rename | Terraform variable만 rename, GitHub Secret(`DJANGO_SECRET_KEY`)은 유지 |
+| ECS 환경변수 locals 기반 동적 조합 | `DATABASE_URL` 등 Terraform 리소스 참조가 필요하여 tfvars로 분리 불가 |
+| `backend_stack="django"` 고정 문자열 | Phase B에서 배열로 확장 예정 |
+
+#### 변경 내용
+- [x] `cookiecutter.json`에 `backend_stack`, `container_port`, `health_check_path` 변수 추가
+- [x] `post_gen_project.py`에 `backend_stack` 변수 읽기 추가
+- [x] `variables.tf`: `django_secret_key` → `app_secret_key`, Django superuser 변수 조건부 래핑, `container_port`/`health_check_path`/`app_env_vars` 변수 추가
+- [x] `ecs.tf`: locals 블록으로 `common_env`/`stack_env`/`backend_env` 동적 조합, container name/port 변수화
+- [x] `alb.tf`: 헬스체크 경로/포트 변수화
+- [x] `ec2.tf` + `user-data.sh`: `app_secret_key` 사용, Django superuser 조건부 래핑
+- [x] `create-infra.yml`/`destroy.yml`: `app_secret_key` 매핑, Django superuser 조건부
+- [x] `deploy.yml`/`deploy-ec2.yml`: quality job 조건부 래핑, health check URL 변수화, migrate/collectstatic 조건부
+- [x] `lib/common.sh`: `verify_endpoint`에 `health_path` 파라미터 추가
+- [x] `infra-only.sh`: `BACKEND_STACK`/`CONTAINER_PORT`/`HEALTH_CHECK_PATH` 수집 및 전달
+- [x] `deploy.sh`: cookiecutter 렌더링에 새 변수 전달
+- [x] `Makefile`: `DJANGO_SUPERUSER_PASSWORD` 프롬프트 조건부 래핑
+
+#### 검증 결과
+- [x] 렌더링 테스트 4개 조합 (ECS+풀, ECS+최소, EC2+풀, EC2+최소) 모두 PASS
+- [x] cookiecutter 잔여 변수 없음 확인
+- [x] Terraform validate 2개 모드 (ECS, EC2) 모두 PASS
+- [x] YAML syntax 검증 (ECS, EC2) 모두 PASS
+
+**수정 파일 (16개):** cookiecutter.json, hooks/post_gen_project.py, variables.tf, ecs.tf, alb.tf, ec2.tf, user-data.sh, create-infra.yml, destroy.yml, deploy.yml, deploy-ec2.yml, lib/common.sh, infra-only.sh, deploy.sh, Makefile, PROGRESS.md
+
+---
 
 ### Phase 12: infra-only.sh — 비-cookiecutter 프로젝트 지원 확장 (완료)
 
@@ -545,39 +582,18 @@ quality ──→ deploy ──→ health-check
 2. 쿠키커터 템플릿에 **백엔드 스택 선택 옵션** 추가 (Django, FastAPI, Spring Boot 등)
 3. **프론트엔드 대시보드**로 UX 향상, 배포된 프로젝트 통계 데이터 관리
 
-### Phase A: 인프라/배포 레이어를 언어에서 분리 (최우선)
+### Phase A: 인프라/배포 레이어를 언어에서 분리 ✅ (완료)
 
 > 나머지 Phase 전부의 기반. deploy.yml과 ecs.tf에서 Django 의존성을 분리하지 않으면, 스택을 추가할 때마다 별도 terraform 파일을 관리해야 함.
 
-**현재 문제:** deploy.yml에 Django lint/test가 하드코딩, ecs.tf에 Django 환경변수(DATABASE_URL, SECRET_KEY 등)가 고정
-
-- [ ] **A-1. deploy.yml 분리**
-  - `ci.yml` (lint/test — 스택별 분기) + `build.yml` (Docker build → ECR push — 공통) + `deploy.yml` (ECS/EC2 배포 — 공통)
-  - build/deploy는 "Dockerfile 기반"이므로 언어 무관
-  - ci만 스택별로 다르면 됨
-- [ ] **A-2. ECS 태스크 정의에서 Django 환경변수 분리**
-  - 공통 변수(PORT, ENVIRONMENT) + 스택별 변수를 `app_env.auto.tfvars`로 분리
-  - `ecs.tf`는 `concat(local.common_env, var.app_env_vars)` 형태로 동적 구성
-  - cookiecutter 렌더링 시 `backend_stack` 값에 따라 적절한 tfvars 생성
-- [ ] **A-3. 헬스체크 경로 변수화**
-  - ALB 헬스체크 `/api/health/` 하드코딩 → `variables.tf`의 `health_check_path` 변수로 이동
-  - Spring Boot는 `/actuator/health`, FastAPI는 `/health` 등 스택에 따라 설정 가능
-
-**결과물:**
-```
-deploy.yml (공통)         ← build + deploy만 남김
-├── build job: docker build backend/
-└── deploy job: ecs update-service
-
-ci-django.yml (스택 전용) ← Django 코드가 여기로 이동
-└── uv sync → ruff → black → pytest
-
-ecs.tf (공통)             ← 공통 환경변수만 남김
-└── environment = concat(local.common_env, var.app_env_vars)
-
-app_env.auto.tfvars       ← 스택별 환경변수 (cookiecutter가 생성)
-└── DATABASE_URL, SECRET_KEY, CELERY_BROKER_URL ...
-```
+- [x] **A-1. deploy.yml quality job을 `backend_stack=="django"` 조건부로 래핑**
+  - 3-파일 분리는 Phase B로 미룸 (단일 파일 내 조건부 분기가 현실적)
+- [x] **A-2. ECS 태스크 정의에서 Django 환경변수 분리**
+  - `ecs.tf`에 `locals { common_env + stack_env + app_env_vars }` 동적 조합
+  - `django_secret_key` → `app_secret_key` rename
+- [x] **A-3. 헬스체크 경로 + 컨테이너 포트 변수화**
+  - `cookiecutter.json`에 `health_check_path`, `container_port` 추가
+  - `variables.tf`, `alb.tf`, `ecs.tf`, 워크플로우, 스크립트에서 참조
 
 ---
 
