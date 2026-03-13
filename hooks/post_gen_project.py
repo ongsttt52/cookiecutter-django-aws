@@ -47,9 +47,13 @@ def generate_package_lock() -> None:
 
 
 def main() -> None:
+    backend_stack = "{{ cookiecutter.backend_stack }}"
     use_frontend = "{{ cookiecutter.use_frontend }}"
     use_celery = "{{ cookiecutter.use_celery }}"
     aws_deployment = "{{ cookiecutter.aws_deployment }}"
+
+    # Phase B에서 스택별 backend/ 정리 로직 추가 예정
+    print(f"backend_stack={backend_stack}")
 
     if use_frontend != "yes":
         print("use_frontend=no: Removing frontend/ directory...")

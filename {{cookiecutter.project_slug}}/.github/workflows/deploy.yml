@@ -56,7 +56,9 @@ jobs:
             echo "Skipping deployment..."
           fi
 
-  # Job 0.5: 코드 품질 검사 (lint + format + test)
+{% endraw %}
+{% if cookiecutter.backend_stack == "django" %}
+{% raw %}  # Job 0.5: 코드 품질 검사 (lint + format + test)
   quality:
     name: Code Quality & Tests
     runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}
@@ -112,13 +114,14 @@ jobs:
 
       - name: Run tests (pytest)
         working-directory: backend
-        run: uv run pytest --no-cov -q
-
+        run: uv run pytest --no-cov -q{% endraw %}
+{% endif %}
+{% raw %}
   # Job 1: Backend Docker 이미지 빌드 & ECR 푸시
   build-backend:
     name: Build and Push Backend Image
     runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}
-    needs: [check-infrastructure, quality]
+    needs: [check-infrastructure{% endraw %}{% if cookiecutter.backend_stack == "django" %}, quality{% endif %}{% raw %}]
     if: needs.check-infrastructure.outputs.exists == 'true'
     outputs:
       image_tag: ${{ steps.meta.outputs.tags }}
@@ -174,7 +177,7 @@ jobs:
   build-frontend:
     name: Build and Push Frontend Image
     runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}
-    needs: [check-infrastructure, quality]
+    needs: [check-infrastructure{% endraw %}{% if cookiecutter.backend_stack == "django" %}, quality{% endif %}{% raw %}]
     if: needs.check-infrastructure.outputs.exists == 'true'
     outputs:
       image_tag: ${{ steps.meta.outputs.tags }}
@@ -349,12 +352,12 @@ jobs:
           MAX_ATTEMPTS=10
           ATTEMPT=1
 
-          echo "🏥 Starting backend health check for $APP_URL/api/health/"
+          echo "🏥 Starting backend health check for $APP_URL{% endraw %}{{cookiecutter.health_check_path}}{% raw %}"
 
           while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
             echo "Attempt $ATTEMPT/$MAX_ATTEMPTS..."
 
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/api/health/" || echo "000")
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL{% endraw %}{{cookiecutter.health_check_path}}{% raw %}" || echo "000")
 
             if [ "$HTTP_CODE" = "200" ]; then
               echo "✅ Backend health check passed! (HTTP $HTTP_CODE)"

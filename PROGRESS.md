@@ -1,6 +1,6 @@
 # Django AWS Cookiecutter Template - 진행상황
 
-**마지막 업데이트:** 2026-03-03
+**마지막 업데이트:** 2026-03-14
 
 ---
 
@@ -293,7 +293,130 @@ ALB (port 80)
 
 ## 현재 작업 중 🚧
 
-Phase 10 완료.
+Phase A 완료. 다음 작업: Phase B (멀티 스택 템플릿).
+
+### Phase A: 인프라/배포 레이어를 언어에서 분리 (완료)
+
+**작업일**: 2026-03-14
+
+Django 전용 코드를 cookiecutter 조건부(`{% if cookiecutter.backend_stack == "django" %}`)로 격리하여, Phase B(멀티 스택 템플릿)의 기반을 마련.
+
+#### 설계 결정
+| 결정 | 근거 |
+|------|------|
+| deploy.yml 내 조건부 분기 (3-파일 분리는 Phase B로 미룸) | `needs` 의존성 복잡도 회피, Django만 지원하는 현재 단계에서 최소 변경 |
+| `django_secret_key` → `app_secret_key` rename | Terraform variable만 rename, GitHub Secret(`DJANGO_SECRET_KEY`)은 유지 |
+| ECS 환경변수 locals 기반 동적 조합 | `DATABASE_URL` 등 Terraform 리소스 참조가 필요하여 tfvars로 분리 불가 |
+| `backend_stack="django"` 고정 문자열 | Phase B에서 배열로 확장 예정 |
+
+#### 변경 내용
+- [x] `cookiecutter.json`에 `backend_stack`, `container_port`, `health_check_path` 변수 추가
+- [x] `post_gen_project.py`에 `backend_stack` 변수 읽기 추가
+- [x] `variables.tf`: `django_secret_key` → `app_secret_key`, Django superuser 변수 조건부 래핑, `container_port`/`health_check_path`/`app_env_vars` 변수 추가
+- [x] `ecs.tf`: locals 블록으로 `common_env`/`stack_env`/`backend_env` 동적 조합, container name/port 변수화
+- [x] `alb.tf`: 헬스체크 경로/포트 변수화
+- [x] `ec2.tf` + `user-data.sh`: `app_secret_key` 사용, Django superuser 조건부 래핑
+- [x] `create-infra.yml`/`destroy.yml`: `app_secret_key` 매핑, Django superuser 조건부
+- [x] `deploy.yml`/`deploy-ec2.yml`: quality job 조건부 래핑, health check URL 변수화, migrate/collectstatic 조건부
+- [x] `lib/common.sh`: `verify_endpoint`에 `health_path` 파라미터 추가
+- [x] `infra-only.sh`: `BACKEND_STACK`/`CONTAINER_PORT`/`HEALTH_CHECK_PATH` 수집 및 전달
+- [x] `deploy.sh`: cookiecutter 렌더링에 새 변수 전달
+- [x] `Makefile`: `DJANGO_SUPERUSER_PASSWORD` 프롬프트 조건부 래핑
+
+#### 검증 결과
+- [x] 렌더링 테스트 4개 조합 (ECS+풀, ECS+최소, EC2+풀, EC2+최소) 모두 PASS
+- [x] cookiecutter 잔여 변수 없음 확인
+- [x] Terraform validate 2개 모드 (ECS, EC2) 모두 PASS
+- [x] YAML syntax 검증 (ECS, EC2) 모두 PASS
+
+**수정 파일 (16개):** cookiecutter.json, hooks/post_gen_project.py, variables.tf, ecs.tf, alb.tf, ec2.tf, user-data.sh, create-infra.yml, destroy.yml, deploy.yml, deploy-ec2.yml, lib/common.sh, infra-only.sh, deploy.sh, Makefile, PROGRESS.md
+
+---
+
+### Phase 12: infra-only.sh — 비-cookiecutter 프로젝트 지원 확장 (완료)
+
+**작업일**: 2026-03-07
+
+기존 `infra-only.sh`는 cookiecutter로 렌더링된 프로젝트(Makefile 파싱 의존)만 지원했으나, 임의의 기존 프로젝트(예: Java, Go 등)에서도 AWS 인프라를 생성할 수 있도록 확장. cookiecutter 템플릿을 렌더링하여 인프라 파일만 추출·복사하는 방식.
+
+#### 주요 변경 사항
+- [x] `check_prerequisites()` — `cookiecutter`를 필수 도구로 추가
+- [x] `collect_infra_inputs()` 신규 — 프롬프트로 인프라 설정 수집 (Makefile 파싱 제거)
+  - PROJECT_NAME (기본값: 디렉토리명), AWS_DEPLOYMENT, AWS_REGION, USE_FRONTEND/CELERY/WEBSOCKET, GITHUB_RUNNER
+  - `--no-input` 시 디렉토리명 + 기본값 자동 사용
+  - 18자 slug 길이 검증, 형식 검증 포함
+- [x] `render_and_extract()` 신규 — 핵심 로직
+  - 기존 파일 백업 (Makefile.bak, terraform.bak.YYYYMMDD_HHMMSS/, workflows/*.bak)
+  - `mktemp -d` + `trap EXIT` 자동 cleanup
+  - cookiecutter 렌더링 → 인프라 파일(terraform/, .github/workflows/, Makefile) 복사
+  - .env.example은 없는 경우만 복사
+  - 렌더링 결과에 `{{cookiecutter.*}}` 잔여 변수 없음 검증
+- [x] `setup_git_and_github()` 신규 — git init, GitHub remote 생성, Secrets 자동 설정
+  - 이미 설정된 항목은 스킵 (멱등성)
+  - EC2 모드 SSH 키 자동 생성·등록
+- [x] `commit_and_push_infra()` 신규 — 인프라 파일 선택적 stage, 커밋, 푸시
+  - main 브랜치가 아닌 경우 경고
+- [x] `main()` 수정 — 10-step 플로우 (Prerequisites → Inputs → Render → Git → Commit → State → Infra → Deploy → Verify → Summary)
+- [x] 기존 `detect_project_config()`, `validate_project()`, `validate_secrets()` 제거
+- [x] `--help` 업데이트 — 새 동작 설명 + 3개 예시
+
+**설계 결정:**
+| 결정 | 근거 |
+|------|------|
+| cookiecutter 렌더링 후 복사 | `post_gen_project.py`가 ECS/EC2 파일 정리를 자동 수행. sed 치환 중복 구현 불필요 |
+| 항상 재생성 (모드 분기 없음) | 기존 파일은 백업 후 덮어쓰기. 설정 변경(ECS↔EC2) 시 재실행으로 해결 |
+| Makefile 파싱 없음 | 프롬프트 입력 또는 기본값만 사용. 단순한 설계 |
+| `trap EXIT` 임시 디렉토리 | 정상/비정상 종료 모두에서 cleanup 보장 |
+
+**수정 파일 (1개):**
+- `infra-only.sh` (전면 수정)
+
+---
+
+### Phase 11: infra-only.sh + 공통 함수 추출 (완료)
+
+**작업일**: 2026-03-03
+
+기존 프로젝트에 AWS 인프라만 생성하는 `infra-only.sh` 스크립트 추가. `deploy.sh`에서 공통 함수를 `lib/common.sh`로 추출하여 코드 재사용.
+
+#### 작업 1: lib/common.sh — 공통 함수 추출
+- [x] `lib/common.sh` 생성
+- [x] 로그 유틸리티 5개 (log_info/success/warn/error/step) + 색상 변수
+- [x] `ensure_state_bucket`: Terraform state S3 버킷 생성/확인
+- [x] `trigger_and_wait_workflow`: GitHub Actions 워크플로우 트리거 + 대기
+- [x] `verify_endpoint`: /api/health/ 헬스체크
+
+#### 작업 2: deploy.sh 리팩토링
+- [x] 상단에 `source "$SCRIPT_DIR/lib/common.sh"` 추가
+- [x] 추출된 함수 정의 제거 (192줄 삭감)
+- [x] `verify_endpoint` → `do_verify_endpoint` 래퍼로 변경 (URL 탐색은 deploy.sh 전용)
+- [x] 동작은 완전히 동일하게 유지 (`deploy.sh --help` 검증)
+
+#### 작업 3: infra-only.sh 작성
+- [x] Step 0: Prerequisites Check (aws, gh, git — cookiecutter/docker 불필요)
+- [x] Step 1: Makefile 파싱으로 PROJECT_SLUG, AWS_REGION, TF_STATE_BUCKET 자동 감지
+- [x] Step 1: terraform/ecs.tf / ec2.tf 존재 여부로 배포 모드 자동 판별
+- [x] Step 2: GitHub repo 존재, Secrets 검증, terraform/ 디렉토리 확인
+- [x] Step 2: terraform/ 로컬 변경 미push 시 경고
+- [x] Step 2: EC2 모드는 SSH 키 Secrets 추가 확인
+- [x] Step 3: Terraform state 버킷 생성 (lib/common.sh 공유)
+- [x] Step 4: create-infra.yml 트리거 + 대기
+- [x] Step 5: (선택) 앱 배포 — --skip-deploy로 스킵 가능
+- [x] Step 6: /api/health/ 엔드포인트 검증
+- [x] Step 7: Summary 출력
+
+**수정/생성 파일 (3개):**
+- `lib/common.sh` (신규)
+- `infra-only.sh` (신규)
+- `deploy.sh` (수정 — 공통 함수를 source로 대체)
+
+**사용법:**
+```bash
+cd /path/to/my_rendered_project
+/path/to/cookiecutter-django-aws/infra-only.sh
+/path/to/cookiecutter-django-aws/infra-only.sh --skip-deploy   # 인프라만
+/path/to/cookiecutter-django-aws/infra-only.sh --no-input      # 비대화 모드
+```
 
 ### Phase 8: EC2 All-in-One 배포 옵션 + deploy.sh (완료)
 
@@ -451,46 +574,106 @@ quality ──→ deploy ──→ health-check
 
 ---
 
-## 다음 단계
+## 향후 로드맵 🗺️
 
-**우선순위 4: 템플릿 DX 개선**
-- [ ] `.env.example`에 AWS credentials 플레이스홀더 경고 문구 추가
-- [ ] `make init` 실행 전 `.env` 유효성 검사 강화 (플레이스홀더 감지)
-- [ ] `terraform_state_bucket` 값을 cookiecutter.json 변수로 분리
+### 궁극적 목표
 
-**우선순위 5: 추가 기능 (선택)**
-- [x] EC2 All-in-One 배포 옵션 추가 (Phase 8에서 완료)
-- [ ] CloudWatch 로그 필터 설정
-- [ ] 최소 케이스(backend only) AWS E2E 배포 테스트
+1. 자바/파이썬 환경에서 기존 배포 여부, 인프라 파일 존재 여부에 관계 없이 **스크립트 실행만으로 통일된 AWS 리소스 & 배포 파이프라인 구축**
+2. 쿠키커터 템플릿에 **백엔드 스택 선택 옵션** 추가 (Django, FastAPI, Spring Boot 등)
+3. **프론트엔드 대시보드**로 UX 향상, 배포된 프로젝트 통계 데이터 관리
+
+### Phase A: 인프라/배포 레이어를 언어에서 분리 ✅ (완료)
+
+> 나머지 Phase 전부의 기반. deploy.yml과 ecs.tf에서 Django 의존성을 분리하지 않으면, 스택을 추가할 때마다 별도 terraform 파일을 관리해야 함.
+
+- [x] **A-1. deploy.yml quality job을 `backend_stack=="django"` 조건부로 래핑**
+  - 3-파일 분리는 Phase B로 미룸 (단일 파일 내 조건부 분기가 현실적)
+- [x] **A-2. ECS 태스크 정의에서 Django 환경변수 분리**
+  - `ecs.tf`에 `locals { common_env + stack_env + app_env_vars }` 동적 조합
+  - `django_secret_key` → `app_secret_key` rename
+- [x] **A-3. 헬스체크 경로 + 컨테이너 포트 변수화**
+  - `cookiecutter.json`에 `health_check_path`, `container_port` 추가
+  - `variables.tf`, `alb.tf`, `ecs.tf`, 워크플로우, 스크립트에서 참조
 
 ---
 
-## 다음 작업 계획 📋
+### Phase B: 백엔드 스택 선택 옵션
 
-### 작업 1: EC2 배포 옵션 추가 (선택 사항)
+> Phase A 위에서 스택별 backend/ 템플릿과 CI 파일을 추가
 
-**배경:**
-- ECS Fargate: 24/7 운영 시 비용이 높음 (~$9/task/월)
-- EC2 All-in-One: 모든 컨테이너를 하나의 EC2에서 실행 (~$7/월 전체)
-- 데모 환경에서 극한의 비용 절감 가능
+- [ ] **B-1. cookiecutter.json 확장**
+  - `backend_stack` 선택 옵션 추가: `["django", "fastapi", "spring-boot"]`
+  - `backend_port`, `health_check_path` 변수 추가
+  - `post_gen_project.py`에서 선택하지 않은 스택의 backend/ 삭제
+- [ ] **B-2. 스택별 backend/ 템플릿**
+  - `backend-django/` → `use_backend=django`일 때 `backend/`으로 rename
+  - `backend-fastapi/` → FastAPI 기본 구조 (uvicorn, Dockerfile, 헬스체크)
+  - `backend-spring-boot/` → Spring Boot 기본 구조 (Gradle, Dockerfile, actuator)
+  - 각 스택에 Dockerfile, entrypoint, 헬스체크 엔드포인트 포함
+- [ ] **B-3. 스택별 CI 워크플로우**
+  - `ci-django.yml` — uv sync, ruff, black, pytest
+  - `ci-fastapi.yml` — uv sync, ruff, pytest
+  - `ci-spring.yml` — ./gradlew check test
+  - deploy.yml이 `workflow_call`로 해당 스택의 ci를 호출
 
-**계획:**
-```json
-// cookiecutter.json
-{
-  "aws_deployment": ["ecs-fargate", "ec2-all-in-one"]
-}
+---
+
+### Phase C: infra-only.sh 범용화
+
+> Phase B의 결과물을 기존 프로젝트(Java, Python 등)에 적용
+
+- [ ] **C-1. 자동 스택 감지**
+  - `backend/pyproject.toml`에서 Django/FastAPI 감지
+  - `backend/build.gradle*` 또는 `backend/pom.xml`에서 Spring Boot 감지
+  - 감지 실패 시 프롬프트로 선택
+- [ ] **C-2. 렌더링 시 감지된 스택 전달**
+  - `cookiecutter --no-input backend_stack="$DETECTED_STACK" health_check_path="$HEALTH_PATH" ...`
+  - 인프라 파일만 복사하되, 스택에 맞는 ci.yml과 ecs.tf 환경변수가 생성됨
+- [ ] **C-3. 기존 Dockerfile 보존 옵션**
+  - 사용자 프로젝트에 이미 Dockerfile이 있으면 덮어쓰지 않는 옵션 추가
+
+---
+
+### Phase D: 프론트엔드 대시보드
+
+> 운영 단계. 급하지 않음
+
+- [ ] **D-1. CLI 리포트 (최소 MVP)**
+  - `infra-only.sh --status`로 현재 배포 상태 조회
+  - Terraform output + ECS 상태 + ALB 헬스체크 결과
+- [ ] **D-2. 웹 대시보드**
+  - 배포된 프로젝트 목록 (S3 state 버킷 기반)
+  - 프로젝트별 상태 (ECS running/stopped, 마지막 배포 시간)
+  - 비용 추정 (Cost Explorer API)
+  - 원클릭 생성/삭제
+  - 기술 스택: Next.js + AWS Lambda(API) + DynamoDB(메타데이터)
+  - 인증: GitHub OAuth (기존 gh CLI 연동)
+- [ ] **D-3. 프로젝트 메타데이터 수집**
+  - `infra-only.sh` 실행 시 DynamoDB에 프로젝트 정보 기록
+  - GitHub Actions 완료 시 webhook으로 배포 결과 전송
+
+---
+
+### Phase 의존성
+
+```
+Phase A (인프라/앱 분리)     ← 모든 Phase의 기반
+  ↓
+Phase B (멀티 스택 템플릿)   ← A 위에서 스택 추가
+  ↓
+Phase C (infra-only 범용화)  ← B의 결과물을 기존 프로젝트에 적용
+  ↓
+Phase D (대시보드)           ← 운영 단계
 ```
 
-**필요한 작업:**
-- [ ] ec2-all-in-one Terraform 템플릿 작성
-- [ ] docker-compose를 EC2에서 실행하는 user-data 스크립트
-- [ ] GitHub Actions 워크플로우 수정
+---
 
-**주의사항:**
-- Django 코드는 동일하게 유지
-- 인프라 설정만 변경
-- 프로덕션 전환 시 ECS로 쉽게 전환 가능
+### 기타 개선 사항 (우선순위 낮음)
+
+- [ ] `.env.example`에 AWS credentials 플레이스홀더 경고 문구 추가
+- [ ] `make init` 실행 전 `.env` 유효성 검사 강화 (플레이스홀더 감지)
+- [ ] `terraform_state_bucket` 값을 cookiecutter.json 변수로 분리
+- [ ] CloudWatch 로그 필터 설정
 
 ---
 

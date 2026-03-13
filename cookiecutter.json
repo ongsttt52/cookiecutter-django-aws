@@ -2,6 +2,10 @@
   "project_name": "my_django_project",
   "project_slug": "{{ cookiecutter.project_name.lower().replace(' ', '_').replace('-', '_') }}",
 
+  "backend_stack": "django",
+  "container_port": "8000",
+  "health_check_path": "/api/health/",
+
   "python_version": "3.12",
   "django_version": "5.2.7",
   "database": "postgresql",

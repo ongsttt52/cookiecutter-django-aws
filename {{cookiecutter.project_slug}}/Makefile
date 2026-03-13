@@ -105,12 +105,13 @@ init:
 	gh secret set DB_PASSWORD --body "$$DB_PASS" && \
 	DJANGO_SECRET_KEY=$$(python3 -c "import secrets; print(secrets.token_urlsafe(50))") && \
 	gh secret set DJANGO_SECRET_KEY --body "$$DJANGO_SECRET_KEY" && \
-	echo "  ✓ DJANGO_SECRET_KEY auto-generated"; \
+	echo "  ✓ DJANGO_SECRET_KEY auto-generated"{% if cookiecutter.backend_stack == "django" %}; \
 	read -sp "Django Superuser Password (default: admin1234): " SU_PASS; \
 	SU_PASS=$${SU_PASS:-admin1234}; \
 	echo ""; \
 	gh secret set DJANGO_SUPERUSER_PASSWORD --body "$$SU_PASS" && \
-	echo "  ✓ DJANGO_SUPERUSER_PASSWORD set"
+	echo "  ✓ DJANGO_SUPERUSER_PASSWORD set"{% endif %}
+
 {% if cookiecutter.aws_deployment == "ec2-all-in-one" %}
 	@echo ""
 	@echo "🔑 Generating EC2 SSH key pair..."
@@ -199,12 +200,13 @@ setup-secrets:
 	gh secret set DB_PASSWORD --body "$$DB_PASS" && \
 	DJANGO_SECRET_KEY=$$(python3 -c "import secrets; print(secrets.token_urlsafe(50))") && \
 	gh secret set DJANGO_SECRET_KEY --body "$$DJANGO_SECRET_KEY" && \
-	echo "  ✓ DJANGO_SECRET_KEY auto-generated"; \
+	echo "  ✓ DJANGO_SECRET_KEY auto-generated"{% if cookiecutter.backend_stack == "django" %}; \
 	read -sp "Django Superuser Password (default: admin1234): " SU_PASS; \
 	SU_PASS=$${SU_PASS:-admin1234}; \
 	echo ""; \
 	gh secret set DJANGO_SUPERUSER_PASSWORD --body "$$SU_PASS" && \
-	echo "  ✓ DJANGO_SUPERUSER_PASSWORD set"
+	echo "  ✓ DJANGO_SUPERUSER_PASSWORD set"{% endif %}
+
 {% if cookiecutter.aws_deployment == "ec2-all-in-one" %}
 	@echo ""
 	@echo "🔑 Setting EC2 SSH key pair..."
@@ -244,9 +246,9 @@ dev:
 	@echo "✅ Services started!"
 	@echo ""
 	@echo "Access at:"
-	@echo "  Backend API:  http://localhost:8000/api/"
-	@echo "  Admin Panel:  http://localhost:8000/api/admin/"
-	@echo "  API Docs:     http://localhost:8000/api/docs/"
+	@echo "  Backend API:  http://localhost:{{cookiecutter.container_port}}/api/"
+	@echo "  Admin Panel:  http://localhost:{{cookiecutter.container_port}}/api/admin/"
+	@echo "  API Docs:     http://localhost:{{cookiecutter.container_port}}/api/docs/"
 {% if cookiecutter.use_frontend == "yes" %}	@echo "  Frontend:     http://localhost:3000"
 {% endif %}{% if cookiecutter.use_websocket == "yes" %}	@echo "  WebSocket:    ws://localhost:8001"
 {% endif %}	@echo ""

@@ -35,7 +35,7 @@ mkdir -p "$APP_DIR"
 echo ">>> Writing .env file..."
 cat > "$APP_DIR/.env" <<'ENVEOF'
 DEBUG=0
-SECRET_KEY=${django_secret_key}
+SECRET_KEY=${app_secret_key}
 ALLOWED_HOSTS=*
 ENVIRONMENT=${environment}
 
@@ -51,10 +51,12 @@ AWS_DEFAULT_REGION=${aws_region}
 POSTGRES_DB=${project_slug}
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=${db_password}
+{% if cookiecutter.backend_stack == "django" %}
 
 DJANGO_SUPERUSER_EMAIL=${django_superuser_email}
 DJANGO_SUPERUSER_PASSWORD=${django_superuser_password}
 DJANGO_SUPERUSER_USERNAME=admin
+{% endif %}
 ENVEOF
 
 # 5. Register systemd service for auto-start on reboot

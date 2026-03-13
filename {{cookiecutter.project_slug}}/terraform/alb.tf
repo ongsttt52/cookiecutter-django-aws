@@ -16,21 +16,20 @@ resource "aws_lb" "main" {
   }
 }
 
-# Backend Target Group (Django 컨테이너로 트래픽 전달)
+# Backend Target Group (백엔드 컨테이너로 트래픽 전달)
 resource "aws_lb_target_group" "backend" {
   name        = "${local.project_name_normalized}-be-tg-${var.environment}"
-  port        = 8000
+  port        = var.container_port
   protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
   target_type = "ip"  # Fargate 또는 awsvpc 네트워크 모드 사용 시 ip
 
-  # 헬스체크 (Django /api/health/ 엔드포인트)
   health_check {
     enabled             = true
     healthy_threshold   = 2
     interval            = 30
     matcher             = "200"
-    path                = "/api/health/"
+    path                = var.health_check_path
     port                = "traffic-port"
     protocol            = "HTTP"
     timeout             = 5
