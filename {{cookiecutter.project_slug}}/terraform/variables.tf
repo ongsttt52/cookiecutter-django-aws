@@ -40,11 +40,11 @@ variable "db_password" {
   default     = "change-this-password"  # terraform apply -var="db_password=실제비밀번호" 로 덮어쓰기
 }
 
-variable "django_secret_key" {
-  description = "Django SECRET_KEY"
+variable "app_secret_key" {
+  description = "Application secret key (Django SECRET_KEY 등 백엔드 스택별 시크릿)"
   type        = string
   sensitive   = true
-  default     = "django-insecure-change-this-in-production"
+  default     = "insecure-change-this-in-production"
 }
 
 variable "db_name" {
@@ -53,6 +53,7 @@ variable "db_name" {
   default     = "{{cookiecutter.project_slug}}"
 }
 
+{% if cookiecutter.backend_stack == "django" %}
 variable "django_superuser_email" {
   description = "Django superuser email (auto-created on first deploy)"
   type        = string
@@ -64,6 +65,26 @@ variable "django_superuser_password" {
   type        = string
   sensitive   = true
   default     = ""
+}
+{% endif %}
+
+# 컨테이너/헬스체크 설정
+variable "container_port" {
+  description = "백엔드 컨테이너 포트"
+  type        = number
+  default     = {{cookiecutter.container_port}}
+}
+
+variable "health_check_path" {
+  description = "ALB 헬스체크 경로"
+  type        = string
+  default     = "{{cookiecutter.health_check_path}}"
+}
+
+variable "app_env_vars" {
+  description = "추가 환경변수 (스택별 커스텀 변수)"
+  type        = list(object({ name = string, value = string }))
+  default     = []
 }
 
 {% if cookiecutter.aws_deployment == "ec2-all-in-one" %}
