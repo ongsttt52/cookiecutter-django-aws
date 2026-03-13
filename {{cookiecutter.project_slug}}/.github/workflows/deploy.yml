@@ -177,7 +177,7 @@ jobs:
   build-frontend:
     name: Build and Push Frontend Image
     runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}
-    needs: [check-infrastructure, quality]
+    needs: [check-infrastructure{% endraw %}{% if cookiecutter.backend_stack == "django" %}, quality{% endif %}{% raw %}]
     if: needs.check-infrastructure.outputs.exists == 'true'
     outputs:
       image_tag: ${{ steps.meta.outputs.tags }}

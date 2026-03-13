@@ -148,9 +148,16 @@ collect_infra_inputs() {
 
       read -rp "Container port [8000]: " CONTAINER_PORT
       CONTAINER_PORT=${CONTAINER_PORT:-8000}
+      if ! [[ "$CONTAINER_PORT" =~ ^[0-9]+$ ]] || [ "$CONTAINER_PORT" -lt 1 ] || [ "$CONTAINER_PORT" -gt 65535 ]; then
+        log_error "Invalid port: $CONTAINER_PORT (must be 1-65535)"
+        exit 1
+      fi
 
       read -rp "Health check path [/api/health/]: " HEALTH_CHECK_PATH
       HEALTH_CHECK_PATH=${HEALTH_CHECK_PATH:-/api/health/}
+      if [[ "$HEALTH_CHECK_PATH" != /* ]]; then
+        HEALTH_CHECK_PATH="/$HEALTH_CHECK_PATH"
+      fi
 
       echo ""
       echo "Deployment options:"
@@ -399,6 +406,9 @@ setup_git_and_github() {
 
   # 필수 Secrets 목록
   local required_secrets=("AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "AWS_ACCOUNT_ID" "DB_PASSWORD" "DJANGO_SECRET_KEY")
+  if [ "${BACKEND_STACK:-django}" = "django" ]; then
+    required_secrets+=("DJANGO_SUPERUSER_PASSWORD")
+  fi
   if [ "$DEPLOY_MODE" = "ec2-all-in-one" ]; then
     required_secrets+=("EC2_SSH_PRIVATE_KEY" "EC2_SSH_PUBLIC_KEY")
   fi
@@ -464,6 +474,14 @@ setup_git_and_github() {
     django_key=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
     echo "$django_key" | gh secret set DJANGO_SECRET_KEY --repo "$REPO_FULL_NAME"
     log_info "  DJANGO_SECRET_KEY set (auto-generated)"
+  fi
+
+  # Django Superuser Password
+  if printf '%s\n' "${missing_secrets[@]}" | grep -q "^DJANGO_SUPERUSER_PASSWORD$"; then
+    local su_pass
+    su_pass=$(python3 -c "import secrets; print(secrets.token_urlsafe(12))")
+    echo "$su_pass" | gh secret set DJANGO_SUPERUSER_PASSWORD --repo "$REPO_FULL_NAME"
+    log_info "  DJANGO_SUPERUSER_PASSWORD set (auto-generated)"
   fi
 
   # EC2 SSH keys
@@ -643,6 +661,9 @@ show_summary() {
     echo ""
     echo "  App URL:     $APP_URL"
     echo "  Health:      $APP_URL${HEALTH_CHECK_PATH:-/api/health/}"
+    if [ "${BACKEND_STACK:-django}" = "django" ]; then
+      echo "  Admin:       $APP_URL/api/admin/"
+    fi
   fi
 
   if [ -n "${TF_STATE_BUCKET:-}" ]; then
