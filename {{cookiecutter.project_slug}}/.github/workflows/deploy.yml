@@ -116,7 +116,7 @@ jobs:
         working-directory: backend
         run: uv run pytest --no-cov -q{% endraw %}
 {% endif %}
-
+{% raw %}
   # Job 1: Backend Docker 이미지 빌드 & ECR 푸시
   build-backend:
     name: Build and Push Backend Image

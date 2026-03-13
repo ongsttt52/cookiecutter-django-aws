@@ -79,11 +79,12 @@ jobs:
   # Job 1: EC2 SSH 배포
   deploy:
     name: Deploy to EC2 via SSH
-    runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}{% endraw %}
-{% if cookiecutter.backend_stack == "django" %}
-{% raw %}    needs: quality{% endraw %}
-{% endif %}
-
+    runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}
+{% endraw %}
+{%- if cookiecutter.backend_stack == "django" %}
+    needs: quality
+{%- endif %}
+{% raw %}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
