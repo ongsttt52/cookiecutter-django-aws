@@ -58,9 +58,11 @@ jobs:
             -var="project_name={% endraw %}{{cookiecutter.project_slug}}{% raw %}" \
             -var="environment=demo" \
             -var="db_password=${{ secrets.DB_PASSWORD }}" \
-            -var="django_secret_key=${{ secrets.DJANGO_SECRET_KEY }}" \
+            -var="app_secret_key=${{ secrets.DJANGO_SECRET_KEY }}" \{% endraw %}
+{%- if cookiecutter.backend_stack == "django" %}{% raw %}
             -var="django_superuser_email=admin@example.com" \
             -var="django_superuser_password=${{ secrets.DJANGO_SUPERUSER_PASSWORD }}" \{% endraw %}
+{%- endif %}
 {%- if cookiecutter.aws_deployment == "ec2-all-in-one" %}{% raw %}
             -var="ec2_public_key=${{ secrets.EC2_SSH_PUBLIC_KEY }}" \{% endraw %}
 {%- endif %}{% raw %}

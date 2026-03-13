@@ -15,7 +15,9 @@ env:
   PROJECT_NAME: {% endraw %}{{ cookiecutter.project_slug | replace('_', '-') }}{% raw %}
 
 jobs:
-  # Job 0: 코드 품질 검사 (lint + format + test)
+{% endraw %}
+{% if cookiecutter.backend_stack == "django" %}
+{% raw %}  # Job 0: 코드 품질 검사 (lint + format + test)
   quality:
     name: Code Quality & Tests
     runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}
@@ -71,13 +73,16 @@ jobs:
 
       - name: Run tests (pytest)
         working-directory: backend
-        run: uv run pytest --no-cov -q
-
+        run: uv run pytest --no-cov -q{% endraw %}
+{% endif %}
+{% raw %}
   # Job 1: EC2 SSH 배포
   deploy:
     name: Deploy to EC2 via SSH
-    runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}
-    needs: quality
+    runs-on: {% endraw %}{{cookiecutter.github_runner}}{% raw %}{% endraw %}
+{% if cookiecutter.backend_stack == "django" %}
+{% raw %}    needs: quality{% endraw %}
+{% endif %}
 
     steps:
       - name: Checkout code
@@ -143,14 +148,18 @@ jobs:
             sudo docker compose -f docker-compose.prod.yml build --no-cache
             sudo docker compose -f docker-compose.prod.yml up -d
 
-            # Run migrations
+{% endraw %}
+{%- if cookiecutter.backend_stack == "django" %}
+{% raw %}            # Run migrations
             echo ">>> Running migrations..."
             sleep 10
             sudo docker compose -f docker-compose.prod.yml exec -T backend uv run python manage.py migrate --no-input
 
             # Collect static files
             sudo docker compose -f docker-compose.prod.yml exec -T backend uv run python manage.py collectstatic --no-input
-
+{% endraw %}
+{%- endif %}
+{% raw %}
             echo ">>> Deployment complete!"
 
       - name: Health check
@@ -159,13 +168,13 @@ jobs:
           MAX_ATTEMPTS=10
           ATTEMPT=1
 
-          echo "Health check for $APP_URL/api/health/"
+          echo "Health check for $APP_URL{% endraw %}{{cookiecutter.health_check_path}}{% raw %}"
 
           sleep 15
 
           while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
             echo "Attempt $ATTEMPT/$MAX_ATTEMPTS..."
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/api/health/" || echo "000")
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL{% endraw %}{{cookiecutter.health_check_path}}{% raw %}" || echo "000")
 
             if [ "$HTTP_CODE" = "200" ]; then
               echo "Health check passed! (HTTP $HTTP_CODE)"
